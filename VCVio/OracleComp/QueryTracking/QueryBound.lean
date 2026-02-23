@@ -27,13 +27,13 @@ namespace OracleComp
 
 section IsQueryBound
 
--- variable {ι} {spec : OracleSpec ι} {ι : Type _} [HasIndexing spec ι] [DecidableEq ι] {α β γ : Type u}
+variable {ι} {spec : OracleSpec ι} {ι : Type _} [DecidableEq ι] {α β γ : Type u}
 
 -- /-- Predicate expressing that `queryBound` is a bound on the number of queries made by `oa`.
 -- In particular any simulation with a `countingOracle` produces counts that are smaller. -/
--- def IsQueryBound (oa : OracleComp spec α) (queryBound : QueryCount ι) : Prop :=
---     ∀ qc ∈ support (snd <$> (simulateQ (countingOracle HasIndexing.idx) oa).run),
---       qc ≤ queryBound
+def IsQueryBound (oa : OracleComp spec α) (queryBound : QueryCount ι) : Prop :=
+    ∀ qc ∈ support (snd <$> (simulateQ (countingOracle HasIndexing.idx) oa).run),
+      qc ≤ queryBound
 
 -- lemma isQueryBound_def (oa : OracleComp spec α) (qb : QueryCount ι) :
 --     IsQueryBound oa qb ↔

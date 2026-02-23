@@ -1,0 +1,292 @@
+% Basic Commitment Scheme - Extracted from snargsbook.tex
+% Chapter 17: Basic commitment scheme
+% Reference: "Building Cryptographic Proofs from Hash Functions" (https://snargsbook.org/)
+
+\documentclass{article}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{paralist}
+\usepackage{hyperref}
+
+% Basic formatting
+\newtheorem{lemma}{Lemma}
+\newtheorem{claim}{Claim}
+\newtheorem{remark}{Remark}
+
+% Common math notation
+\newcommand{\Naturals}{\mathbb{N}}
+\newcommand{\Bits}{\{0,1\}}
+\newcommand{\DefineEqual}{\coloneqq}
+\newcommand{\Negate}{\overline}
+\newcommand{\Cardinality}[1]{|#1|}
+\newcommand{\AbsValue}[1]{|#1|}
+\newcommand{\Expectation}{\mathbb{E}}
+\newcommand{\Pr}{\mathsf{Pr}}
+\newcommand{\StatisticalDistance}[2]{\Delta(#1, #2)}
+\newcommand{\TextAndInMath}{\quad\text{and}\quad}
+\newcommand{\ConditionedOn}{\mid}
+\newcommand{\DoQuote}[1]{``#1''}
+\newcommand{\EquationComment}[1]{\qquad\text{(#1)}}
+\newcommand{\IndentedBullet}{\quad\bullet\ }
+\newcommand{\concat}{\,\|\,}
+
+% Experiment notation
+\newcommand{\GivenExperiment}{\;\middle|\;}
+\newcommand{\StateExperiment}[1]{\begin{array}{l}#1\end{array}}
+\newcommand{\Event}{\mathsf{E}}
+
+% Random Oracle notation
+\newcommand{\ROFunction}{f}
+\newcommand{\RODistribution}[1]{\mathcal{F}_{#1}}
+\newcommand{\ROOutputSize}{\lambda}
+\newcommand{\ROQueryBound}{q}
+\newcommand{\ROTrace}{\mathsf{T}}
+\newcommand{\ROAdvState}{\mathsf{st}}
+\newcommand{\ROQuery}{\mathsf{x}}
+\newcommand{\ROAnswer}{\mathsf{y}}
+\newcommand{\ROOutputAndTrace}[4]{(#3, #4) \gets #2^{#1}}
+\newcommand{\ROInputOutputAndTrace}[5]{(#4, #5) \gets #2^{#1}(#3)}
+
+% Collision resistance expressions
+\newcommand{\ROCRExpression}[2]{\frac{1}{2} \cdot \frac{(#2-1) \cdot #2}{2^{#1}}}
+\newcommand{\ROPExpression}[1]{\frac{1}{2^{#1}}}
+\newcommand{\ROOWEntropyExpression}[1]{\frac{\ROQueryBound}{2^{#1}}}
+
+% Protocol notation
+\newcommand{\ProtoSalt}{\tau}
+\newcommand{\ProtoSoundnessError}{\varepsilon}
+\newcommand{\ProtoKnowledgeError}{\kappa}
+\newcommand{\ProtoAdversary}{\mathcal{A}}
+
+% Basic Commitment Scheme notation
+\newcommand{\CMSymbol}{\mathsf{CM}}
+\newcommand{\CMSubscript}{\scriptscriptstyle\CMSymbol}
+\newcommand{\CMConstructor}[3]{\CMSymbol[#1,#2,#3]}
+\newcommand{\CMCommit}{\CMSymbol.\mathsf{Commit}}
+\newcommand{\CMCheck}{\CMSymbol.\mathsf{Check}}
+\newcommand{\CMExtractor}{\CMSymbol.\mathsf{Extract}}
+\newcommand{\CMMultiExtractor}{\CMSymbol.\mathsf{MultiExtract}}
+\newcommand{\CMSimulator}{\CMSymbol.\mathsf{Simulate}}
+\newcommand{\CMMessageLength}{\ell}
+\newcommand{\CMSaltSize}{s}
+\newcommand{\CMCommitment}{\mathsf{cm}}
+\newcommand{\CMMessage}{\mathsf{m}}
+\newcommand{\CMSaltString}{\ProtoSalt}
+\newcommand{\CMBindingError}{\ProtoSoundnessError_{\CMSubscript}}
+\newcommand{\CMExtractionError}{\ProtoKnowledgeError_{\CMSubscript}}
+\newcommand{\CMHidingError}{z_{\CMSubscript}}
+\newcommand{\CMNumCommitments}{n}
+\newcommand{\CMAdversary}{\ProtoAdversary}
+
+% Error bound expressions
+\newcommand{\CMBindingExpression}[2]{\frac{1}{2} \cdot \frac{#2^2}{2^{#1}}}
+\newcommand{\CMExtractabilityExpression}[2]{\CMBindingExpression{#1}{#2}}
+\newcommand{\CMMultiExtractabilityExpression}[3]{\frac{1}{2} \cdot \frac{#2^2}{2^{#1}} + \frac{#3 \cdot #2}{2^{#1}}}
+\newcommand{\CMHidingExpressionFinite}[2]{\frac{#2}{2^{#1}}}
+\newcommand{\CMHidingExpressionInfinite}[1]{3 \sqrt{\ROOutputSize \CMMessageLength #1} \cdot 2^{-\frac{#1 - \ROOutputSize}{2}}}
+
+% Random variable
+\newcommand{\RandomVariableZ}{Z}
+\newcommand{\RandomVariableX}{X}
+
+% Cross-references (simplified)
+\newcommand{\Cref}[1]{Section~\ref{#1}}
+\newcommand{\FigureFolder}{figures}
+
+\title{Basic Commitment Scheme}
+\author{Extracted from ``Building Cryptographic Proofs from Hash Functions''}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document contains the basic commitment scheme chapter from the snargsbook,
+describing a commitment scheme $\CMSymbol = (\CMCommit, \CMCheck)$ in the random
+oracle model. The scheme satisfies three key properties: binding, extractability,
+and hiding.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{chapter:basic-commitment}
+
+A (non-interactive) commitment scheme enables a party to commit to a message $\CMMessage$ to obtain a commitment $\CMCommitment$ in such a way that:
+\begin{inparaenum}[(a)]
+  \item the committing party can subsequently ``open'' the commitment $\CMCommitment$ to the message $\CMMessage$;
+  \item it is intractable to open $\CMCommitment$ to a different message $\CMMessage'$; and
+  \item the commitment $\CMCommitment$ reveals no information about the message $\CMMessage$.
+\end{inparaenum}
+Commitment schemes are a fundamental cryptographic primitive, and in particular they play a key role in the construction of succinct arguments in the random oracle model.
+
+\subsection{The Basic Construction}
+
+The basic commitment scheme is a tuple of algorithms
+\begin{equation*}
+\CMSymbol = (\CMCommit,\CMCheck)
+\end{equation*}
+and has several parameters: an output size $\ROOutputSize \in \Naturals$ of the random oracle, a message length $\CMMessageLength \in \Naturals$, and a salt size $\CMSaltSize \in \Naturals$. We use the notation $\CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$ when we wish to make these parameters explicit. The algorithms receive query access to a random oracle $\ROFunction \in \RODistribution{\ROOutputSize}$ and work as follows.
+
+\begin{itemize}
+  \item \emph{Commit.}
+  The algorithm $\CMCommit$ receives as input a message $\CMMessage \in \Bits^{\CMMessageLength}$, samples a random salt $\CMSaltString \in \Bits^{\CMSaltSize}$, queries the random oracle $\ROFunction$ to compute the commitment $\CMCommitment \DefineEqual \ROFunction(\CMMessage,\CMSaltString) \in \Bits^{\ROOutputSize}$, and outputs the pair $(\CMCommitment,\CMSaltString)$.
+
+  \item \emph{Check.}
+  The algorithm $\CMCheck$ receives as input a commitment $\CMCommitment$, message $\CMMessage \in \Bits^{\CMMessageLength}$, and salt $\CMSaltString \in \Bits^{\CMSaltSize}$, and queries the random oracle to check that $\CMCommitment = \ROFunction(\CMMessage,\CMSaltString)$.
+\end{itemize}
+
+\subsection{Security Properties Overview}
+
+We prove several properties about the basic commitment scheme $\CMSymbol$:
+\begin{itemize}
+  \item \textbf{Binding} (Section~\ref{section:basic-commitment-binding}): An adversary cannot find two distinct messages that open the same commitment. The binding error is at most $\CMBindingExpression{\ROOutputSize}{\ROQueryBound}$ for $\ROQueryBound$-query adversaries.
+
+  \item \textbf{Extractability} (Section~\ref{section:basic-commitment-extractability}): If an adversary outputs a commitment that it subsequently opens, then the adversary ``knew'' the opening at commitment time. The extraction error equals the binding error.
+
+  \item \textbf{Hiding} (Section~\ref{section:basic-commitment-hiding}): A commitment reveals no information about the committed message. The hiding error is at most $\CMHidingExpressionFinite{\CMSaltSize}{\ROQueryBound}$ for bounded adversaries.
+\end{itemize}
+
+\section{Binding}
+\label{section:basic-commitment-binding}
+
+We prove that $\CMSymbol$ is \emph{binding}: an adversary cannot find two distinct messages that open the same commitment.
+
+\begin{lemma}[$\CMSymbol$ is binding]
+\label{lemma:cm-binding}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. For every query bound $\ROQueryBound \in \Naturals$ and $\ROQueryBound$-query algorithm $\CMAdversary$, if $\ROQueryBound \geq 2$ then
+\begin{equation*}
+\Pr\left[
+\begin{array}{l}
+\CMMessage_{0} \neq \CMMessage_{1} \\
+\land\;\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{0},\CMSaltString_{0})=1 \\
+\land\;\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{1},\CMSaltString_{1})=1
+\end{array}
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+(\CMCommitment,\CMMessage_{0},\CMSaltString_{0},\CMMessage_{1},\CMSaltString_{1}) \gets \CMAdversary^{\ROFunction}
+}
+\right]
+\leq
+\CMBindingExpression{\ROOutputSize}{\ROQueryBound}
+\end{equation*}
+\end{lemma}
+
+The proof relies on collision resistance of the random oracle and on unpredictability for edge cases.
+
+\section{Extractability}
+\label{section:basic-commitment-extractability}
+
+We prove that $\CMSymbol$ is \emph{extractable}: if an adversary outputs a commitment that it subsequently opens, then the adversary ``knew'' the opening at commitment time.
+
+\subsection{Extraction for One Commitment}
+
+The extractability property is formalized via an efficient algorithm $\CMExtractor$ called an \emph{extractor}.
+
+\begin{lemma}[$\CMSymbol$ is extractable]
+\label{lemma:cm-extractability}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. There exists a polynomial-time deterministic algorithm $\CMExtractor$ such that for every query bound $\ROQueryBound \in \Naturals$ and $\ROQueryBound$-query algorithm $\CMAdversary$, if $\ROQueryBound \geq 3$ then
+\begin{equation*}
+\Pr\left[
+\begin{array}{l}
+\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage,\CMSaltString)=1 \\
+\land\;(\CMMessage',\CMSaltString') \neq (\CMMessage,\CMSaltString)
+\end{array}
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+\ROOutputAndTrace{\ROFunction}{\CMAdversary}{\ROTrace}{(\CMCommitment,\ROAdvState)} \\
+(\CMMessage',\CMSaltString') \gets \CMExtractor(\CMCommitment,\ROTrace) \\
+(\CMMessage,\CMSaltString) \gets \CMAdversary^{\ROFunction}(\ROAdvState)
+}
+\right]
+\leq
+\CMExtractabilityExpression{\ROOutputSize}{\ROQueryBound}
+\end{equation*}
+Moreover, $\CMExtractor$ runs in time $O\big(\ROQueryBound \cdot (\CMMessageLength + \CMSaltSize + \ROOutputSize)\big)$.
+\end{lemma}
+
+The extractor $\CMExtractor$ works as follows: Search the trace $\ROTrace$ for a query-answer pair of the form $((\CMMessage',\CMSaltString'),\CMCommitment)$. If found, output $(\CMMessage',\CMSaltString')$; otherwise abort.
+
+\subsection{Extraction for Multiple Commitments}
+
+Extraction extends to adversaries that output \emph{multiple} commitments without multiplicative loss in the number of commitments.
+
+\begin{lemma}[$\CMSymbol$ is multi-extractable]
+\label{lemma:cm-multi-extractability}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. There exists a polynomial-time deterministic \textbf{stateful} algorithm $\CMMultiExtractor$ such that for every query bound $\ROQueryBound \in \Naturals$, $\ROQueryBound$-query algorithm $\CMAdversary$, and number of commitments $\CMNumCommitments \in \Naturals$, if $\ROQueryBound \geq 2\CMNumCommitments$ then the extraction error is at most
+\begin{equation*}
+\CMMultiExtractabilityExpression{\ROOutputSize}{\ROQueryBound}{\CMNumCommitments}
+\end{equation*}
+\end{lemma}
+
+The dominant error (collisions) is global rather than per-commitment, which is why there is no multiplicative loss.
+
+\subsection{Extractability Implies Binding}
+
+Extractability is stronger than binding: if $\CMSymbol$ satisfies extractability with error $\CMExtractionError$ then $\CMSymbol$ satisfies binding with error $\CMBindingError \leq 2 \cdot \CMExtractionError$.
+
+\section{Hiding}
+\label{section:basic-commitment-hiding}
+
+We prove that $\CMSymbol$ is \emph{hiding}: a commitment $\CMCommitment$ computed as $\ROFunction(\CMMessage,\CMSaltString)$ for a random $\CMSaltString \in \Bits^{\CMSaltSize}$ reveals no information about $\CMMessage$, up to a small statistical ``leakage'' error.
+
+\begin{lemma}[$\CMSymbol$ is hiding]
+\label{lemma:cm-hiding}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. There exists a polynomial-time probabilistic algorithm $\CMSimulator$ such that for every query bound $\ROQueryBound \in \Naturals$ and $\ROQueryBound$-query algorithm $\CMAdversary$, the following two distributions are $\CMHidingError(\ROOutputSize,\CMMessageLength,\CMSaltSize,\ROQueryBound)$-close in statistical distance:
+\begin{equation*}
+\left\{
+\CMAdversary^{\ROFunction}(\ROAdvState,\CMCommitment)
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+(\CMMessage,\ROAdvState) \gets \CMAdversary^{\ROFunction} \\
+(\CMCommitment,\CMSaltString) \gets \CMCommit^{\ROFunction}(\CMMessage)
+}
+\right\}
+\TextAndInMath
+\left\{
+\CMAdversary^{\ROFunction}(\ROAdvState,\CMCommitment)
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+(\CMMessage,\ROAdvState) \gets \CMAdversary^{\ROFunction} \\
+\CMCommitment \gets \CMSimulator^{\ROFunction}
+}
+\right\}
+\end{equation*}
+where
+\begin{equation*}
+\CMHidingError(\ROOutputSize,\CMMessageLength,\CMSaltSize,\ROQueryBound)
+\leq
+\begin{cases}
+\CMHidingExpressionFinite{\CMSaltSize}{\ROQueryBound}
+& \text{ if $\ROQueryBound<\infty$} \\
+\CMHidingExpressionInfinite{\CMSaltSize}
+& \text{ if $\ROQueryBound=\infty$}
+\end{cases}
+\end{equation*}
+Moreover, $\CMSimulator^{\ROFunction}$ outputs a random string in $\Bits^{\ROOutputSize}$.
+\end{lemma}
+
+\section{Summary of Error Bounds}
+
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Property} & \textbf{Error Bound} \\
+\hline
+Binding & $\CMBindingExpression{\ROOutputSize}{\ROQueryBound}$ \\
+Extractability & $\CMExtractabilityExpression{\ROOutputSize}{\ROQueryBound}$ \\
+Multi-Extractability & $\CMMultiExtractabilityExpression{\ROOutputSize}{\ROQueryBound}{\CMNumCommitments}$ \\
+Hiding (bounded) & $\CMHidingExpressionFinite{\CMSaltSize}{\ROQueryBound}$ \\
+Hiding (unbounded) & $\CMHidingExpressionInfinite{\CMSaltSize}$ \\
+\hline
+\end{tabular}
+\end{center}
+
+\section*{References}
+
+This chapter is based on Chapter 17 of ``Building Cryptographic Proofs from Hash Functions'' available at \url{https://snargsbook.org/}.
+
+\end{document}
