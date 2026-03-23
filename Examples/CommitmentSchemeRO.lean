@@ -354,11 +354,11 @@ theorem hidingImpl_agree (s : S) (ms : M × S)
   | some u => rfl
   | none =>
     -- cnt < 2, so the redirect condition is false, making queryPoint = ms
-    have hcnt : decide (cnt ≥ 2) = false := by
-      exact decide_eq_false (Nat.not_le.mpr h)
-    rw [show (decide (cnt ≥ 2) && (ms.2 == s)) = true = ((false && (ms.2 == s)) = true)
-      from by rw [hcnt]]
-    simp
+    have hcnt : (if (decide (cnt ≥ 2) && (ms.2 == s)) = true then (default, default) else ms)
+        = ms := by
+      have : decide (cnt ≥ 2) = false := decide_eq_false (Nat.not_le.mpr h)
+      simp [this]
+    rw [hcnt]
 
 /-- Bad is monotone for `hidingImpl₁`: once the counter reaches 2, it stays ≥ 2. -/
 theorem hidingImpl₁_bad_mono (s : S) (ms : M × S)
