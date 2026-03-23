@@ -279,6 +279,58 @@ private lemma cacheSizeBound_mono {cache : QueryCache spec} {s s' : ℕ}
   obtain ⟨S, hcard, hmem⟩ := h
   exact ⟨S, le_trans hcard hle, hmem⟩
 
+/-! ### Cache collision from cacheQuery
+
+Characterization of when `cacheQuery` introduces a new collision, and a cardinality
+bound on the set of "bad" values that create such collisions. -/
+
+omit [spec.DecidableEq] [spec.Fintype] [spec.Inhabited] in
+/-- When `¬CacheHasCollision c₀` and `c₀ t = none`, the updated cache `c₀.cacheQuery t u`
+has a collision iff there exists a distinct cached input whose output HEq-matches `u`. -/
+private lemma cacheHasCollision_cacheQuery_iff {c₀ : QueryCache spec} {t : ι}
+    (hnocol : ¬CacheHasCollision c₀) (hmiss : c₀ t = none) (u : spec.Range t) :
+    CacheHasCollision (c₀.cacheQuery t u) ↔
+      ∃ (t' : ι) (u' : spec.Range t'), t' ≠ t ∧ c₀ t' = some u' ∧ HEq u u' := by
+  constructor
+  · intro ⟨t₁, t₂, u₁, u₂, hne, h₁, h₂, heq⟩
+    -- The collision involves the new entry (t, u) and some existing entry.
+    by_cases h1t : t₁ = t
+    · subst h1t
+      simp [QueryCache.cacheQuery_self] at h₁
+      have h₂' : c₀ t₂ = some u₂ := by
+        rwa [QueryCache.cacheQuery_of_ne _ _ (Ne.symm hne)] at h₂
+      exact ⟨t₂, u₂, Ne.symm hne, h₂', h₁ ▸ heq⟩
+    · by_cases h2t : t₂ = t
+      · subst h2t
+        simp [QueryCache.cacheQuery_self] at h₂
+        have h₁' : c₀ t₁ = some u₁ := by
+          rwa [QueryCache.cacheQuery_of_ne _ _ h1t] at h₁
+        exact ⟨t₁, u₁, h1t, h₁', h₂ ▸ heq.symm⟩
+      · -- Both t₁, t₂ ≠ t, so entries are from c₀ — contradicts hnocol
+        have h₁' : c₀ t₁ = some u₁ := by
+          rwa [QueryCache.cacheQuery_of_ne _ _ h1t] at h₁
+        have h₂' : c₀ t₂ = some u₂ := by
+          rwa [QueryCache.cacheQuery_of_ne _ _ h2t] at h₂
+        exact absurd ⟨t₁, t₂, u₁, u₂, hne, h₁', h₂', heq⟩ hnocol
+  · intro ⟨t', u', hne, hcache, heq⟩
+    exact ⟨t, t', u, u', Ne.symm hne, QueryCache.cacheQuery_self c₀ t u,
+      (QueryCache.cacheQuery_of_ne c₀ u hne).symm ▸ hcache, heq⟩
+
+-- When ¬CacheHasCollision c₀, c₀ t = none, and cache has ≤ s entries,
+-- at most s values of u create a new collision in c₀.cacheQuery t u.
+open Classical in
+private lemma card_bad_le {c₀ : QueryCache spec} {t : ι} {s : ℕ}
+    (hnocol : ¬CacheHasCollision c₀) (hmiss : c₀ t = none)
+    (hsize : CacheSizeBound c₀ s) :
+    Finset.card (Finset.filter (fun u => CacheHasCollision (c₀.cacheQuery t u))
+      Finset.univ) ≤ s := by
+  sorry
+
+private lemma sum_shift_cons (s m : ℕ) (N : ℝ≥0∞) :
+    (s : ℝ≥0∞) * N⁻¹ + ∑ k ∈ range m, ((s + 1 + k : ℕ) : ℝ≥0∞) * N⁻¹ =
+      ∑ k ∈ range (m + 1), ((s + k : ℕ) : ℝ≥0∞) * N⁻¹ := by
+  sorry
+
 /-! ### Core birthday bound by induction on OracleComp
 
 The proof tracks a cache size bound `s` alongside the query budget `n`.
