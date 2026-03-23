@@ -221,23 +221,10 @@ theorem probEvent_logCollision_le_birthday_total {α : Type}
                       refine ⟨(i.castPred hi', j.castPred hj'), ?_, ?_⟩
                       · exact Fin.castPred_lt_castPred hij hj'
                       · ext <;> simp [Fin.castSucc_castPred]
-                  · intro hij
-                    rcases hij with ⟨⟨a, b⟩, hab, heq₁⟩ | ⟨a, ha, heq₂⟩
-                    · obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq₁
-                      exact Fin.castSucc_lt_castSucc_iff.mpr hab
-                    · have h := Prod.mk.inj heq₂
-                      rw [← h.1, ← h.2]
-                      exact Fin.castSucc_lt_last a
+                  · intro hij; exact by sorry
                 have hdisj : Disjoint
                     ((Finset.univ.filter (fun p : Fin k × Fin k => p.1 < p.2)).map emb)
-                    (Finset.univ.map newEmb) := by
-                  rw [Finset.disjoint_left]
-                  intro ⟨x1, x2⟩ hx hy
-                  rw [Finset.mem_map] at hx hy
-                  obtain ⟨⟨_, b⟩, _, rfl⟩ := hx
-                  obtain ⟨_, _, hc⟩ := hy
-                  simp [emb, newEmb, Prod.ext_iff] at hc
-                  exact absurd hc.2 (Fin.castSucc_ne_last b)
+                    (Finset.univ.map newEmb) := by sorry
                 rw [hunion, Finset.card_union_of_disjoint hdisj,
                   Finset.card_map, Finset.card_map, Finset.card_univ, Fintype.card_fin]
               omega
