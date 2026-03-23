@@ -530,4 +530,149 @@ theorem tvDist_simulateQ_le_probEvent_bad
       (tvDist_map_le (m := OracleComp spec) (α := α × σ) (β := α) Prod.fst sim₁ sim₂)
   exact le_trans h_map h_tv_joint
 
+/-! ## Distributional "identical until bad" lemma
+
+This variant allows the two oracle implementations to be **distributionally**
+equal (same `probOutput` for every output) when `¬bad`, rather than literally
+equal as computations. This is needed for comparing games where the oracle
+implementations query different underlying points but return identically
+distributed results (e.g., querying at `(m, s)` vs `(default, default)` when
+the underlying oracle is memoryless). -/
+
+private lemma probOutput_simulateQ_run_eq_of_not_bad_dist
+    {σ : Type} {ι : Type u} {spec : OracleSpec ι} [spec.Fintype] [spec.Inhabited]
+    (impl₁ impl₂ : QueryImpl spec (StateT σ (OracleComp spec)))
+    (bad : σ → Prop) [DecidablePred bad]
+    (h_agree_dist : ∀ (t : spec.Domain) (s : σ), ¬bad s →
+      ∀ p, Pr[= p | (impl₁ t).run s] = Pr[= p | (impl₂ t).run s])
+    (h_mono₁ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₁ t).run s), bad x.2)
+    (h_mono₂ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₂ t).run s), bad x.2)
+    (oa : OracleComp spec α) (s₀ : σ) (x : α) (s : σ) (hs : ¬bad s) :
+    Pr[= (x, s) | (simulateQ impl₁ oa).run s₀] =
+      Pr[= (x, s) | (simulateQ impl₂ oa).run s₀] := by
+  induction oa using OracleComp.inductionOn generalizing s₀ with
+  | pure a =>
+    by_cases h_bad : bad s₀
+    · rw [probOutput_simulateQ_run_eq_zero_of_bad impl₁ bad h_mono₁ (pure a) s₀ h_bad x s hs,
+          probOutput_simulateQ_run_eq_zero_of_bad impl₂ bad h_mono₂ (pure a) s₀ h_bad x s hs]
+    · rfl
+  | query_bind t oa ih =>
+    by_cases h_bad : bad s₀
+    · rw [probOutput_simulateQ_run_eq_zero_of_bad impl₁ bad h_mono₁ _ s₀ h_bad x s hs,
+          probOutput_simulateQ_run_eq_zero_of_bad impl₂ bad h_mono₂ _ s₀ h_bad x s hs]
+    · simp only [simulateQ_bind, simulateQ_query, OracleQuery.input_query,
+        OracleQuery.cont_query, id_map, StateT.run_bind]
+      rw [probOutput_bind_eq_tsum, probOutput_bind_eq_tsum]
+      -- Step 1: Use IH to unify the continuation under impl₂
+      have step1 : ∀ (p : spec.Range t × σ),
+          Pr[= p | (impl₁ t).run s₀] *
+            Pr[= (x, s) | (simulateQ impl₁ (oa p.1)).run p.2] =
+          Pr[= p | (impl₁ t).run s₀] *
+            Pr[= (x, s) | (simulateQ impl₂ (oa p.1)).run p.2] := by
+        intro ⟨u, s'⟩; congr 1; exact ih u s'
+      rw [show (∑' p, Pr[= p | (impl₁ t).run s₀] *
+          Pr[= (x, s) | (simulateQ impl₁ (oa p.1)).run p.2]) =
+          (∑' p, Pr[= p | (impl₁ t).run s₀] *
+          Pr[= (x, s) | (simulateQ impl₂ (oa p.1)).run p.2]) from
+        tsum_congr step1]
+      -- Step 2: Use distributional equality of impl₁ and impl₂ at the query step
+      exact tsum_congr (fun p => by rw [h_agree_dist t s₀ h_bad p])
+
+private lemma probEvent_not_bad_eq_dist
+    {σ : Type} {ι : Type u} {spec : OracleSpec ι} [spec.Fintype] [spec.Inhabited]
+    (impl₁ impl₂ : QueryImpl spec (StateT σ (OracleComp spec)))
+    (bad : σ → Prop) [DecidablePred bad]
+    (h_agree_dist : ∀ (t : spec.Domain) (s : σ), ¬bad s →
+      ∀ p, Pr[= p | (impl₁ t).run s] = Pr[= p | (impl₂ t).run s])
+    (h_mono₁ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₁ t).run s), bad x.2)
+    (h_mono₂ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₂ t).run s), bad x.2)
+    (oa : OracleComp spec α) (s₀ : σ) :
+    Pr[fun x => ¬bad x.2 | (simulateQ impl₁ oa).run s₀] =
+    Pr[fun x => ¬bad x.2 | (simulateQ impl₂ oa).run s₀] := by
+  rw [probEvent_eq_tsum_ite, probEvent_eq_tsum_ite]
+  refine tsum_congr (fun ⟨a, s⟩ => ?_)
+  split_ifs with h
+  · rfl
+  · exact probOutput_simulateQ_run_eq_of_not_bad_dist impl₁ impl₂ bad h_agree_dist h_mono₁ h_mono₂
+      oa s₀ a s h
+
+private lemma probEvent_bad_eq_dist
+    {σ : Type} {ι : Type u} {spec : OracleSpec ι} [spec.Fintype] [spec.Inhabited]
+    (impl₁ impl₂ : QueryImpl spec (StateT σ (OracleComp spec)))
+    (bad : σ → Prop) [DecidablePred bad]
+    (h_agree_dist : ∀ (t : spec.Domain) (s : σ), ¬bad s →
+      ∀ p, Pr[= p | (impl₁ t).run s] = Pr[= p | (impl₂ t).run s])
+    (h_mono₁ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₁ t).run s), bad x.2)
+    (h_mono₂ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₂ t).run s), bad x.2)
+    (oa : OracleComp spec α) (s₀ : σ) :
+    Pr[bad ∘ Prod.snd | (simulateQ impl₁ oa).run s₀] =
+    Pr[bad ∘ Prod.snd | (simulateQ impl₂ oa).run s₀] := by
+  have h1 := probEvent_compl ((simulateQ impl₁ oa).run s₀) (bad ∘ Prod.snd)
+  have h2 := probEvent_compl ((simulateQ impl₂ oa).run s₀) (bad ∘ Prod.snd)
+  simp only [NeverFail.probFailure_eq_zero, tsub_zero] at h1 h2
+  have h_not_bad := probEvent_not_bad_eq_dist impl₁ impl₂ bad h_agree_dist h_mono₁ h_mono₂ oa s₀
+  have h_not_bad' : Pr[fun x => ¬(bad ∘ Prod.snd) x | (simulateQ impl₁ oa).run s₀] =
+      Pr[fun x => ¬(bad ∘ Prod.snd) x | (simulateQ impl₂ oa).run s₀] :=
+    h_not_bad
+  have hne : Pr[fun x => ¬(bad ∘ Prod.snd) x | (simulateQ impl₁ oa).run s₀] ≠ ⊤ :=
+    ne_top_of_le_ne_top one_ne_top probEvent_le_one
+  calc Pr[bad ∘ Prod.snd | (simulateQ impl₁ oa).run s₀]
+      = 1 - Pr[fun x => ¬(bad ∘ Prod.snd) x | (simulateQ impl₁ oa).run s₀] := by
+        rw [← h1]; exact (ENNReal.add_sub_cancel_right hne).symm
+    _ = 1 - Pr[fun x => ¬(bad ∘ Prod.snd) x | (simulateQ impl₂ oa).run s₀] := by
+        rw [h_not_bad']
+    _ = Pr[bad ∘ Prod.snd | (simulateQ impl₂ oa).run s₀] := by
+        rw [← h2]; exact ENNReal.add_sub_cancel_right
+          (ne_top_of_le_ne_top one_ne_top probEvent_le_one)
+
+/-- Distributional "identical until bad": if two oracle implementations produce
+distributionally equal `(output, state)` pairs whenever `¬bad`, then the total
+variation distance between the two simulations is bounded by `Pr[bad]`.
+
+This generalizes `tvDist_simulateQ_le_probEvent_bad` by relaxing literal
+computation equality to distributional equality (same `probOutput` for all
+output-state pairs). This is needed when implementations query the underlying
+oracle at different points that happen to return identically distributed values
+(e.g., a memoryless random oracle). -/
+theorem tvDist_simulateQ_le_probEvent_bad_dist
+    {σ : Type}
+    (impl₁ impl₂ : QueryImpl spec (StateT σ (OracleComp spec)))
+    (bad : σ → Prop) [DecidablePred bad]
+    (oa : OracleComp spec α) (s₀ : σ)
+    (h_init : ¬bad s₀)
+    (h_agree_dist : ∀ (t : spec.Domain) (s : σ), ¬bad s →
+      ∀ p, Pr[= p | (impl₁ t).run s] = Pr[= p | (impl₂ t).run s])
+    (h_mono₁ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₁ t).run s), bad x.2)
+    (h_mono₂ : ∀ (t : spec.Domain) (s : σ), bad s →
+      ∀ x ∈ support ((impl₂ t).run s), bad x.2) :
+    tvDist ((simulateQ impl₁ oa).run' s₀) ((simulateQ impl₂ oa).run' s₀)
+      ≤ Pr[bad ∘ Prod.snd | (simulateQ impl₁ oa).run s₀].toReal := by
+  classical
+  let sim₁ := (simulateQ impl₁ oa).run s₀
+  let sim₂ := (simulateQ impl₂ oa).run s₀
+  have h_eq : ∀ (x : α) (s : σ), ¬bad s →
+      Pr[= (x, s) | sim₁] = Pr[= (x, s) | sim₂] :=
+    fun x s hs => probOutput_simulateQ_run_eq_of_not_bad_dist impl₁ impl₂ bad h_agree_dist
+      h_mono₁ h_mono₂ oa s₀ x s hs
+  have h_bad_eq : Pr[bad ∘ Prod.snd | sim₁] = Pr[bad ∘ Prod.snd | sim₂] :=
+    probEvent_bad_eq_dist impl₁ impl₂ bad h_agree_dist h_mono₁ h_mono₂ oa s₀
+  have h_tv_joint : tvDist sim₁ sim₂ ≤ Pr[bad ∘ Prod.snd | sim₁].toReal :=
+    tvDist_le_probEvent_of_probOutput_eq_of_not (mx := sim₁) (my := sim₂) (bad ∘ Prod.snd)
+      (fun xs hxs => by
+        rcases xs with ⟨x, s⟩
+        simpa using h_eq x s hxs)
+      h_bad_eq
+  have h_map :
+      tvDist ((simulateQ impl₁ oa).run' s₀) ((simulateQ impl₂ oa).run' s₀) ≤ tvDist sim₁ sim₂ := by
+    simpa [sim₁, sim₂, StateT.run'] using
+      (tvDist_map_le (m := OracleComp spec) (α := α × σ) (β := α) Prod.fst sim₁ sim₂)
+  exact le_trans h_map h_tv_joint
+
 end OracleComp.ProgramLogic.Relational
