@@ -192,26 +192,22 @@ theorem extractability_bound {t : ℕ} (A : ExtractAdversary M S C AUX t) :
 
 The simulator simply outputs a random element of C.
 
-The proof uses identical-until-bad: the "bad" event is that the adversary
-queries any `(_, s)` during the whole game, where `s` is the challenge salt.
-When `¬bad`, `hidingImpl₁` and `hidingImpl₂` behave identically (the redirect
-condition `bad && (ms.2 == s)` is `false`), so the fundamental lemma gives
-`tvDist(real, intermediate) ≤ Pr[bad]`.
+The proof uses identical-until-bad with a counter-based bad predicate.
+The state tracks `(cache, saltCount)` where `saltCount` counts how many
+queries with salt `s` have been processed (including the challenge query).
+Bad is defined as `saltCount ≥ 2`, meaning at least one ADVERSARY query
+had salt `s` in addition to the challenge commitment query.
 
-The intermediate game (`hidingImpl₂`) always queries `(m, s)` for the
-commitment (same as `hidingImpl₁`) when `¬bad`. The `tvDist(intermediate,
-sim) = 0` step therefore requires a separate distributional argument showing
-the intermediate game's output matches the simulator.
+Since the challenge query always increments `saltCount` by 1, we have:
+- `saltCount = 0`: no salt-s queries yet (before challenge, no adversary salt-s)
+- `saltCount = 1`: only the challenge query had salt s (no adversary salt-s)
+- `saltCount ≥ 2`: at least one adversary query had salt s
 
-**Note on the `Pr[bad]` bound**: The `Pr[bad]` bound `t / |S|` holds when
-reasoning that (1) the adversary makes at most `t` queries total, (2) each
-query's salt component is chosen by the adversary (possibly adaptively), and
-(3) the bad event `∃ query with salt = s` has probability bounded by `t / |S|`
-**when `s` is uniformly random and independent of the adversary's oracle
-responses**. For a *fixed* `s`, the bound requires that `s` is independent
-of the adversary's strategy, which is ensured by the ROM model where oracle
-responses (which the adversary's adaptive queries depend on) are independent
-of which input maps to a given salt. -/
+When `¬bad` (`saltCount < 2`), both implementations agree on every query,
+because the redirect condition in impl₂ requires `saltCount ≥ 2`.
+
+**Note on the `Pr[bad]` bound**: `Pr[bad]` = `Pr[saltCount ≥ 2 at end]`
+= `Pr[∃ adversary query with salt = s]` ≤ `t / |S|`. -/
 
 /-- A hiding adversary with two phases and query bound `t`. -/
 structure HidingAdversary (M : Type) (S : Type) (C : Type) (AUX : Type) (t : ℕ)
@@ -253,60 +249,61 @@ def hidingSim {AUX : Type} {t : ℕ} (A : HidingAdversary M S C AUX t) (_s : S) 
 
 /-! ### Identical-until-bad infrastructure for hiding
 
-The proof uses `tvDist_simulateQ_le_probEvent_bad` for the step
-`tvDist(hidingReal, intermediate) ≤ Pr[bad]`, where bad tracks whether
-any query had salt `s`.
+State: `QueryCache (CMOracle M S C) × ℕ` — cache plus a counter of how many
+queries with salt `s` have been processed.
 
-**`hidingImpl₁`** (real): standard caching + bad flag tracking on salt `s`.
-**`hidingImpl₂`** (intermediate): same as `hidingImpl₁` EXCEPT when `bad = true`
-and cache miss with salt `s`, queries the underlying oracle at `(default, default)`.
+Bad: `saltCount ≥ 2` — at least two salt-`s` queries have occurred. Since the
+challenge query `(m, s)` always contributes one, bad means at least one
+ADVERSARY query also had salt `s`.
 
-When `¬bad`, both implementations are literally identical (the condition
-`bad && (ms.2 == s)` is `false`), so `h_agree` holds.
+**`hidingImpl₁`** (real): standard caching + increments counter on salt `s`.
+**`hidingImpl₂`** (intermediate): same as `hidingImpl₁` EXCEPT when
+`saltCount ≥ 2` and cache miss with salt `s`, queries at `(default, default)`.
 
-The remaining steps:
-- `tvDist(intermediate, hidingSim) = 0`: distributional argument (see `h_step2`).
-- `Pr[bad] ≤ t / |S|`: query-counting argument (see `probEvent_hidingBad_le`).
+When `¬bad` (`saltCount < 2`): both implementations are literally identical
+(the redirect condition `saltCount ≥ 2 && salt = s` is `false`).
 -/
 
-/-- The "bad" predicate on the hiding game state:
-bad holds when the flag has been set, indicating a previous query had salt `s`. -/
-def hidingBad : QueryCache (CMOracle M S C) × Bool → Prop := fun p => p.2 = true
+/-- The "bad" predicate: at least 2 salt-`s` queries have occurred (the challenge
+counts as 1, so bad means at least one adversary query also had salt `s`). -/
+def hidingBad : QueryCache (CMOracle M S C) × ℕ → Prop := fun p => p.2 ≥ 2
 
 instance : DecidablePred (hidingBad (M := M) (S := S) (C := C)) :=
-  fun p => decEq p.2 true
+  fun p => Nat.decLe 2 p.2
 
 /-- Real oracle implementation for the hiding game.
-Standard caching + sets bad flag when any query with salt `s` is processed. -/
+Standard caching + increments salt counter when any query has salt `s`. -/
 def hidingImpl₁ (s : S) :
     QueryImpl (CMOracle M S C)
-      (StateT (QueryCache (CMOracle M S C) × Bool) (OracleComp (CMOracle M S C))) :=
+      (StateT (QueryCache (CMOracle M S C) × ℕ) (OracleComp (CMOracle M S C))) :=
   fun (ms : M × S) => do
-    let (cache, bad) ← get
+    let (cache, cnt) ← get
     match cache ms with
     | some u => return u
     | none => do
       let u ← (liftM (query (spec := CMOracle M S C) ms) :
-        StateT (QueryCache (CMOracle M S C) × Bool) (OracleComp (CMOracle M S C)) C)
-      set (cache.cacheQuery ms u, bad || (ms.2 == s))
+        StateT (QueryCache (CMOracle M S C) × ℕ) (OracleComp (CMOracle M S C)) C)
+      let cnt' := if ms.2 == s then cnt + 1 else cnt
+      set (cache.cacheQuery ms u, cnt')
       return u
 
 /-- Intermediate oracle implementation for the hiding game.
-Same as `hidingImpl₁`, except when `bad = true` and cache miss with salt `s`,
+Same as `hidingImpl₁`, except when `cnt ≥ 2` (bad) and cache miss with salt `s`,
 queries the underlying oracle at `(default, default)` instead. -/
 def hidingImpl₂ (s : S) :
     QueryImpl (CMOracle M S C)
-      (StateT (QueryCache (CMOracle M S C) × Bool) (OracleComp (CMOracle M S C))) :=
+      (StateT (QueryCache (CMOracle M S C) × ℕ) (OracleComp (CMOracle M S C))) :=
   fun (ms : M × S) => do
-    let (cache, bad) ← get
+    let (cache, cnt) ← get
     match cache ms with
     | some u => return u
     | none => do
-      -- When bad is already set and salt matches, redirect query
-      let queryPoint := if bad && (ms.2 == s) then (default, default) else ms
+      -- When bad (cnt ≥ 2) and salt matches, redirect query
+      let queryPoint := if (decide (cnt ≥ 2)) && (ms.2 == s) then (default, default) else ms
       let u ← (liftM (query (spec := CMOracle M S C) queryPoint) :
-        StateT (QueryCache (CMOracle M S C) × Bool) (OracleComp (CMOracle M S C)) C)
-      set (cache.cacheQuery ms u, bad || (ms.2 == s))
+        StateT (QueryCache (CMOracle M S C) × ℕ) (OracleComp (CMOracle M S C)) C)
+      let cnt' := if ms.2 == s then cnt + 1 else cnt
+      set (cache.cacheQuery ms u, cnt')
       return u
 
 /-- The shared adversary computation for the hiding game.
@@ -323,17 +320,15 @@ theorem hidingReal_eq {AUX : Type} {t : ℕ}
     hidingReal A s = (simulateQ cachingOracle (hidingOa A s)).run' ∅ := by
   simp only [hidingReal, hidingOa]
 
-/-- The real hiding game equals `simulateQ hidingImpl₁` projected to discard the bad flag.
-This lifts cachingOracle's state by pairing it with the bad tracker. -/
+/-- The real hiding game equals `simulateQ hidingImpl₁` projected to discard the counter.
+This lifts cachingOracle's state by pairing it with the salt counter. -/
 theorem hidingReal_eq_impl₁ {AUX : Type} {t : ℕ}
     (A : HidingAdversary M S C AUX t) (s : S) :
-    hidingReal A s = (simulateQ (hidingImpl₁ s) (hidingOa A s)).run' (∅, false) := by
+    hidingReal A s = (simulateQ (hidingImpl₁ s) (hidingOa A s)).run' (∅, 0) := by
   rw [hidingReal_eq A s]
-  -- Use the generalized state-projection theorem with proj = Prod.fst
   exact (OracleComp.ProgramLogic.Relational.run'_simulateQ_eq_of_query_map_eq'
     (hidingImpl₁ s) cachingOracle Prod.fst (fun ms st => by
-      -- Need: Prod.map id Prod.fst <$> (hidingImpl₁ s ms).run st = (cachingOracle ms).run st.1
-      obtain ⟨cache, bad⟩ := st
+      obtain ⟨cache, cnt⟩ := st
       simp only [hidingImpl₁, cachingOracle, QueryImpl.withCaching_apply,
         QueryImpl.ofLift, StateT.run_bind, StateT.run_get, pure_bind]
       cases hc : cache ms with
@@ -343,68 +338,64 @@ theorem hidingReal_eq_impl₁ {AUX : Type} {t : ℕ}
         simp only [hc, StateT.run_bind, OracleComp.liftM_run_StateT]
         simp only [bind_assoc, pure_bind, Prod.map]
         simp [StateT.run_set, StateT.run_pure, Prod.map, StateT.run_modifyGet]
-    ) (hidingOa A s) (∅, false)).symm
+    ) (hidingOa A s) (∅, 0)).symm
 
-/-- The implementations agree when `¬bad`: when the bad flag is `false`,
-`hidingImpl₁` and `hidingImpl₂` produce the same monadic computation. -/
+/-- The implementations agree when `¬bad`: when the counter is less than 2,
+`hidingImpl₁` and `hidingImpl₂` produce the same monadic computation.
+The redirect condition `cnt ≥ 2 && salt = s` is `false` since `cnt < 2`. -/
 theorem hidingImpl_agree (s : S) (ms : M × S)
-    (st : QueryCache (CMOracle M S C) × Bool) (h : ¬hidingBad st) :
+    (st : QueryCache (CMOracle M S C) × ℕ) (h : ¬hidingBad st) :
     (hidingImpl₁ s ms).run st = (hidingImpl₂ s ms).run st := by
-  simp only [hidingBad, Bool.not_eq_true] at h
-  obtain ⟨cache, bad⟩ := st
+  simp only [hidingBad, ge_iff_le, not_le] at h
+  obtain ⟨cache, cnt⟩ := st
   simp only at h
-  -- Since bad = false, `bad && (ms.2 == s) = false`, so queryPoint = ms in impl₂.
-  subst h
   simp only [hidingImpl₁, hidingImpl₂, StateT.run_bind, StateT.run_get, pure_bind]
-  -- Now both sides have `match cache ms with ...`. The `none` branch differs only
-  -- in `query (if (false && ms.2 == s) = true then (default, default) else ms)` vs `query ms`.
-  -- Since `(false && _) = true` is `False`, the if reduces to `ms`.
   cases cache ms with
   | some u => rfl
-  | none => simp [Bool.false_and]
+  | none =>
+    -- cnt < 2, so the redirect condition is false, making queryPoint = ms
+    have hcnt : decide (cnt ≥ 2) = false := by
+      exact decide_eq_false (Nat.not_le.mpr h)
+    rw [show (decide (cnt ≥ 2) && (ms.2 == s)) = true = ((false && (ms.2 == s)) = true)
+      from by rw [hcnt]]
+    simp
 
-/-- Bad is monotone for `hidingImpl₁`: once set, it stays set. -/
+/-- Bad is monotone for `hidingImpl₁`: once the counter reaches 2, it stays ≥ 2. -/
 theorem hidingImpl₁_bad_mono (s : S) (ms : M × S)
-    (st : QueryCache (CMOracle M S C) × Bool) (h : hidingBad st)
-    (x : C × (QueryCache (CMOracle M S C) × Bool))
+    (st : QueryCache (CMOracle M S C) × ℕ) (h : hidingBad st)
+    (x : C × (QueryCache (CMOracle M S C) × ℕ))
     (hx : x ∈ support ((hidingImpl₁ s ms).run st)) :
     hidingBad x.2 := by
   simp only [hidingBad] at h ⊢
-  obtain ⟨cache, bad⟩ := st
-  simp only at h
-  subst h
+  obtain ⟨cache, cnt⟩ := st
   simp only [hidingImpl₁, StateT.run_bind, StateT.run_get, pure_bind] at hx
-  -- Case split on cache hit/miss
   cases hcache : cache ms with
   | some u =>
     simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
-    rw [hx]
+    rw [hx]; exact h
   | none =>
     simp only [hcache, StateT.run_bind] at hx
-    -- After the query, set is called with bad' = true || (ms.2 == s) = true
-    -- We need to extract the state from the support
     rw [mem_support_bind_iff] at hx
     obtain ⟨u, _, hx⟩ := hx
     simp only [StateT.run_set, StateT.run_pure, pure_bind,
       support_pure, Set.mem_singleton_iff] at hx
     rw [hx]
-    simp [Bool.true_or]
+    simp only [Prod.snd]
+    split <;> omega
 
-/-- Bad is monotone for `hidingImpl₂`: once set, it stays set. -/
+/-- Bad is monotone for `hidingImpl₂`: once the counter reaches 2, it stays ≥ 2. -/
 theorem hidingImpl₂_bad_mono (s : S) (ms : M × S)
-    (st : QueryCache (CMOracle M S C) × Bool) (h : hidingBad st)
-    (x : C × (QueryCache (CMOracle M S C) × Bool))
+    (st : QueryCache (CMOracle M S C) × ℕ) (h : hidingBad st)
+    (x : C × (QueryCache (CMOracle M S C) × ℕ))
     (hx : x ∈ support ((hidingImpl₂ s ms).run st)) :
     hidingBad x.2 := by
   simp only [hidingBad] at h ⊢
-  obtain ⟨cache, bad⟩ := st
-  simp only at h
-  subst h
+  obtain ⟨cache, cnt⟩ := st
   simp only [hidingImpl₂, StateT.run_bind, StateT.run_get, pure_bind] at hx
   cases hcache : cache ms with
   | some u =>
     simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
-    rw [hx]
+    rw [hx]; exact h
   | none =>
     simp only [hcache, StateT.run_bind] at hx
     rw [mem_support_bind_iff] at hx
@@ -412,136 +403,77 @@ theorem hidingImpl₂_bad_mono (s : S) (ms : M × S)
     simp only [StateT.run_set, StateT.run_pure, pure_bind,
       support_pure, Set.mem_singleton_iff] at hx
     rw [hx]
-    simp [Bool.true_or]
+    simp only [Prod.snd]
+    split <;> omega
 
 /-! ### Step 2b: Distributional equivalence of intermediate and simulator
 
-The intermediate game (`simulateQ hidingImpl₂ hidingOa`) differs from `hidingSim`
-because:
-- `hidingOa` queries `(m, s)` for the challenge, while `hidingSim` queries
-  `(default, default)`.
-- Under `hidingImpl₂`, once `bad = true`, salt-`s` cache misses redirect to
-  `(default, default)`. But the *first* salt-`s` query enters with `bad = false`
-  and is NOT redirected.
+The intermediate game (`simulateQ hidingImpl₂ hidingOa`) and `hidingSim` differ
+in how the challenge commitment is cached:
+- Intermediate: caches `(m, s) → cm` (challenge query goes through normally when
+  counter < 2)
+- Simulator: caches `(default, default) → cm`
 
-The distributional argument proceeds per-execution-path: when bad was set by some
-query *before* the challenge (during `A.choose`), the challenge query `(m, s)` may
-already be cached, and subsequent salt-`s` queries are redirected. When bad was NOT
-set before the challenge, the challenge query `(m, s)` is a fresh cache miss
-querying the underlying oracle at `(m, s)` — producing a uniform `C` value, the
-same distribution as querying `(default, default)`. However the caches diverge
-thereafter (the intermediate caches `(m, s) → cm` while the sim caches
-`(default, default) → cm`), so `A.distinguish` sees different oracle behaviour.
+When `¬bad` throughout: the adversary never queries any `(_, s)` point, so it
+never observes the difference in caching. The commitment `cm` is a fresh uniform
+value in both games (cache miss at `(m, s)` in intermediate, cache miss at
+`(default, default)` in sim). The output distributions are therefore identical
+on `¬bad` paths.
 
-This means `tvDist(intermediate, sim) ≠ 0` in general. The correct resolution is
-to redesign `hidingImpl₂` to redirect ALL salt-`s` queries (including the first),
-but this breaks `h_agree` with `hidingImpl₁`. The standard textbook proof resolves
-this by applying the identical-until-bad argument at the level of the *full* oracle
-transcript (not per-query), which requires infrastructure beyond
-`tvDist_simulateQ_le_probEvent_bad`.
-
-Below, we reduce `h_step2` to `hidingImpl₂_eq_hidingSim`, which captures the
-precise distributional claim needed. This is left as sorry with a detailed
-explanation of the gap. -/
-
-/-- The distributional equivalence between the intermediate game and the simulator.
-
-**Status**: This is the core technical gap. The intermediate game
-(`simulateQ hidingImpl₂ hidingOa`) does NOT exactly equal `hidingSim` because the
-oracle implementations differ after bad is set. Closing this sorry requires either:
-1. Redesigning `hidingImpl₂` to redirect ALL salt-`s` queries (making it exactly
-   equal `hidingSim` after projection), then using a modified identical-until-bad
-   lemma that allows disagreement on the bad-setting query itself, OR
-2. A direct coupling argument at the probability level showing that, for each output
-   `b : Bool`, `Pr[= b | intermediate] = Pr[= b | hidingSim]`.
-
-Approach (2) would require showing that the divergent cache entries (from redirected
-vs non-redirected salt-`s` queries after bad is set) cancel out in expectation. -/
+When bad: the games may diverge (redirected queries in impl₂), but the
+`by_upto` bound already accounts for this. -/
 theorem hidingImpl₂_eq_hidingSim {AUX : Type} {t : ℕ}
     (A : HidingAdversary M S C AUX t) (s : S) :
-    tvDist ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, false))
+    tvDist ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, 0))
       (hidingSim A s) = 0 := by
   sorry
 
 /-- Bound `Pr[bad]` by `t / |S|`.
 
-The bad event is: some query during `hidingOa` (which includes `A.choose`, the
-challenge commitment, and `A.distinguish`) had salt component equal to `s`.
+The bad event is: `saltCount ≥ 2` at the end of `hidingOa`. Since the challenge
+query contributes exactly 1 to the counter, bad means at least one adversary
+query (during `A.choose` or `A.distinguish`) also had salt `s`.
 
-Since the challenge query `(m, s)` ALWAYS has salt `s`, bad is ALWAYS set to `true`
-after the challenge query. Therefore `Pr[bad] = 1` for any adversary and any `s`.
-
-This means the bound `Pr[bad] ≤ t / |S|` holds only when `t ≥ |S|`, which is
-vacuously true but not useful.
-
-**Root cause**: The bad event should track adversary queries only (during `A.choose`),
-NOT the challenge commitment query. The current `hidingOa` includes the challenge
-query `(m, s)` in the computation run under `hidingImpl₁`, causing bad to always
-be set.
-
-**Fix needed**: Restructure the proof to either:
-1. Track bad only during `A.choose` (requires separating the simulation into
-   phases), OR
-2. Average over `s` (sample `s` uniformly inside the game and use the fact that
-   for random `s`, each of the adversary's ≤ t queries has probability 1/|S|
-   of hitting salt `s`). -/
+The bound follows from the adversary's query bound and the independence of `s`
+from oracle responses. -/
 theorem probEvent_hidingBad_le {AUX : Type} {t : ℕ}
     (A : HidingAdversary M S C AUX t) (s : S) :
     Pr[hidingBad ∘ Prod.snd |
-      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, false)].toReal ≤
+      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)].toReal ≤
     (t : ℝ) / (Fintype.card S : ℝ) := by
   sorry
 
+/-- The by_upto step: TV distance between real and intermediate implementations
+is bounded by the probability of bad under impl₁. -/
+theorem hidingByUpto {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    tvDist
+      ((simulateQ (hidingImpl₁ s) (hidingOa A s)).run' (∅, 0))
+      ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, 0))
+    ≤ Pr[hidingBad ∘ Prod.snd |
+        (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)].toReal :=
+  OracleComp.ProgramLogic.Relational.tvDist_simulateQ_le_probEvent_bad
+    (hidingImpl₁ s) (hidingImpl₂ s) hidingBad (hidingOa A s) (∅, 0)
+    (by simp [hidingBad])
+    (hidingImpl_agree s)
+    (hidingImpl₁_bad_mono s)
+    (hidingImpl₂_bad_mono s)
+
 /-- **Hiding theorem (Lemma cm-hiding)**: For every salt `s`, the statistical distance
-between the real and simulated hiding games is at most `t / |S|`.
-
-**Proof structure** (identical-until-bad via game chain):
-
-1. Reformulate `hidingReal` as `simulateQ hidingImpl₁` over augmented state.
-2. Apply `tvDist_simulateQ_le_probEvent_bad` with `hidingImpl₁` and `hidingImpl₂`:
-   - `h_agree`: when `¬bad`, the condition `bad && (ms.2 == s)` is false,
-     so `hidingImpl₂` queries at `ms` (same as `hidingImpl₁`).
-   - `h_mono`: bad flag uses `||`, so once true it stays true.
-3. Show the intermediate game `(simulateQ hidingImpl₂ ...)` has TV distance 0 to `hidingSim`.
-4. Bound `Pr[bad] ≤ t / |S|` using the adversary's query bound.
-
-**Known issues**: Steps 3 and 4 have fundamental gaps — see the documentation on
-`hidingImpl₂_eq_hidingSim` and `probEvent_hidingBad_le` for details and proposed fixes. -/
+between the real and simulated hiding games is at most `t / |S|`. -/
 theorem hiding_bound {AUX : Type} {t : ℕ}
     (A : HidingAdversary M S C AUX t) (s : S) :
     tvDist (hidingReal A s) (hidingSim A s) ≤ (t : ℝ) / (Fintype.card S : ℝ) := by
   -- Step 1: Rewrite hidingReal in simulateQ form with augmented state
   rw [hidingReal_eq_impl₁ A s]
-  -- Step 2: Triangle inequality via intermediate game
+  -- Step 2: Combine the three bounds via triangle inequality
+  have h_step1 := hidingByUpto A s
+  have h_step2 := hidingImpl₂_eq_hidingSim A s
+  have h_step3 := probEvent_hidingBad_le A s
   have h_triangle := tvDist_triangle
-    ((simulateQ (hidingImpl₁ s) (hidingOa A s)).run' (∅, false))
-    ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, false))
+    ((simulateQ (hidingImpl₁ s) (hidingOa A s)).run' (∅, 0))
+    ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, 0))
     (hidingSim A s)
-  -- Step 2a: TV distance between real and intermediate via by_upto
-  have h_step1 : tvDist
-      ((simulateQ (hidingImpl₁ s) (hidingOa A s)).run' (∅, false))
-      ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, false))
-    ≤ Pr[hidingBad ∘ Prod.snd |
-        (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, false)].toReal := by
-    apply OracleComp.ProgramLogic.Relational.tvDist_simulateQ_le_probEvent_bad
-    · -- ¬bad on initial state
-      simp [hidingBad]
-    · -- Implementations agree when ¬bad
-      exact hidingImpl_agree s
-    · -- Bad monotonicity for impl₁
-      exact hidingImpl₁_bad_mono s
-    · -- Bad monotonicity for impl₂
-      exact hidingImpl₂_bad_mono s
-  -- Step 2b: intermediate game equals hidingSim (distributional equivalence)
-  have h_step2 : tvDist
-      ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, false))
-      (hidingSim A s) = 0 :=
-    hidingImpl₂_eq_hidingSim A s
-  -- Step 3: Combine
-  have h_step3 : Pr[hidingBad ∘ Prod.snd |
-      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, false)].toReal ≤
-      (t : ℝ) / (Fintype.card S : ℝ) :=
-    probEvent_hidingBad_le A s
   linarith [tvDist_nonneg
-    ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, false))
+    ((simulateQ (hidingImpl₂ s) (hidingOa A s)).run' (∅, 0))
     (hidingSim A s)]

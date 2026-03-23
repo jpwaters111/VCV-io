@@ -1,0 +1,809 @@
+\part{Commitment Schemes}
+\label{part:commitment-schemes}
+
+\PartAbstract{Succinct arguments in the random oracle model (ROM) rely on suitable commitment schemes in the ROM, which we study in detail in this part. First we study the security properties of a basic commitment scheme in the ROM: the commitment is the output of the random oracle when given as input the message and a random salt. This commitment scheme is only a warmup because it lacks a key property used for succinct arguments: the ability to cheaply open a subset of entries of the message (as opposed to only being able to open the entire message). Then we study Merkle commitment schemes in the ROM, which have this \DoQuote{succinct opening} capability.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Basic commitment scheme}
+\label{chapter:basic-commitment}
+
+A (non-interactive) commitment scheme enables a party to commit to a message $\CMMessage$ to obtain a commitment $\CMCommitment$ in such a way that:
+\begin{inparaenum}[(a)]
+  \item the committing party can subsequently \DoQuote{open} the commitment $\CMCommitment$ to the message $\CMMessage$;
+  \item it is intractable to open $\CMCommitment$ to a different message $\CMMessage'$; and
+  \item the commitment $\CMCommitment$ reveals no information about the message $\CMMessage$.
+\end{inparaenum}
+Commitment schemes are a fundamental cryptographic primitive, and in particular they play a key role in the construction of succinct arguments in the random oracle model.
+
+Here we describe a basic commitment scheme obtained from the random oracle, which we denote by $\CMSymbol$. This serves two purposes:
+\begin{inparaenum}[(1)]
+  \item analyzing the security properties of $\CMSymbol$ is a useful warm up to more sophisticated constructions in the random oracle model; and
+  \item $\CMSymbol$ is an ingredient to the construction of a Merkle commitment scheme $\MTSymbol$ (studied in \Cref{chapter:merkle-commitment}), which is used to construct succinct arguments.
+\end{inparaenum}
+
+The basic commitment scheme is a tuple of algorithms
+\begin{equation*}
+\CMSymbol = (\CMCommit,\CMCheck)
+\end{equation*}
+and has several parameters: an output size $\ROOutputSize \in \Naturals$ of the random oracle, a message length $\CMMessageLength \in \Naturals$, and a salt size $\CMSaltSize \in \Naturals$. We use the notation $\CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$ when we wish to make these parameters explicit. The algorithms receive query access to a random oracle $\ROFunction \in \RODistribution{\ROOutputSize}$ and work as follows.
+\begin{itemize}
+
+  \item \emph{Commit.}
+  The algorithm $\CMCommit$ receives as input a message $\CMMessage \in \Bits^{\CMMessageLength}$, samples a random salt $\CMSaltString \in \Bits^{\CMSaltSize}$, queries the random oracle $\ROFunction$ to compute the commitment $\CMCommitment \DefineEqual \ROFunction(\CMMessage,\CMSaltString) \in \Bits^{\ROOutputSize}$, and outputs the pair $(\CMCommitment,\CMSaltString)$.
+
+  \item \emph{Check.}
+  The algorithm $\CMCheck$ receives as input a commitment $\CMCommitment$, message $\CMMessage \in \Bits^{\CMMessageLength}$, and salt $\CMSaltString \in \Bits^{\CMSaltSize}$, and queries the random oracle to check that $\CMCommitment = \ROFunction(\CMMessage,\CMSaltString)$.
+
+\end{itemize}
+See \Cref{figure:basic-commitment-diagram} for a diagram.
+
+\parhead{Organization}
+We prove several properties about the basic commitment scheme $\CMSymbol$.
+\begin{itemize}[noitemsep]
+  \item In \Cref{section:basic-commitment-binding} we prove that $\CMSymbol$ is \emph{binding}.
+  \item In \Cref{section:basic-commitment-extractability} we prove that $\CMSymbol$ is \emph{extractable}.
+  \item In \Cref{section:basic-commitment-hiding} we prove that $\CMSymbol$ is \emph{hiding}.
+\end{itemize}
+
+\begin{figure}[htp!]
+\centering
+\includegraphics[width=0.5\textwidth]{\FigureFolder/basic-commitment-diagram}
+\caption{Diagram of the basic commitment scheme $\CMSymbol$.}
+\label{figure:basic-commitment-diagram}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Binding}
+\label{section:basic-commitment-binding}
+
+We prove that $\CMSymbol$ is \emph{binding}: an adversary cannot find two distinct messages that open the same commitment. In more detail, we consider an experiment where the adversary, given access to a random oracle $\ROFunction$, is challenged to output a commitment $\CMCommitment$ and two message-salt pairs $(\CMMessage_{0},\CMSaltString_{0})$ and $(\CMMessage_{1},\CMSaltString_{1})$ such that:
+\begin{inparaenum}[(i)]
+  \item the messages $\CMMessage_{0}$ and $\CMMessage_{1}$ are distinct (and the salts $\CMSaltString_{0}$ and $\CMSaltString_{1}$ may or may not be distinct); and
+  \item $\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{0},\CMSaltString_{0})=1$ and $\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{1},\CMSaltString_{1})=1$.
+\end{inparaenum}
+The maximum winning probability of an adversary in this experiment is the \emph{binding error} of $\CMSymbol$.
+
+Breaking the binding property of $\CMSymbol$ is related to finding collisions in the random oracle, because the aforementioned condition of opening the same commitment via two different messages is equivalent to $\ROFunction(\CMMessage_{0},\CMSaltString_{0})=\ROFunction(\CMMessage_{1},\CMSaltString_{1})$ for $\CMMessage_{0} \neq \CMMessage_{1}$.
+
+By the discussion on finding collisions in \Cref{section:collision-resistance}, the binding error is $\Omega(\frac{\ROQueryBound^2}{2^{\ROOutputSize}})$: the collision-finding strategy in the proof of \Cref{claim:collision-lower-bound} can be modified in a straightforward way to find, with probability $\Omega(\frac{\ROQueryBound^2}{2^{\ROOutputSize}})$, $(\CMMessage_{0},\CMSaltString_{0})$ and $(\CMMessage_{1},\CMSaltString_{1})$ such that $\CMMessage_{0} \neq \CMMessage_{1}$ and $\ROFunction(\CMMessage_{0},\CMSaltString_{0})=\ROFunction(\CMMessage_{1},\CMSaltString_{1})$. On the other hand, the lemma below states that any $\ROQueryBound$-query algorithm can break the binding property with probability at most $O(\frac{\ROQueryBound^2}{2^{\ROOutputSize}})$, where the probability is taken over the choice of random oracle. The proof relies on collision resistance of the random oracle, as well as on unpredictability of the random oracle for an edge case in the analysis. Note that the salt size $\CMSaltSize$ of $\CMSymbol$ does \emph{not} play a role in this upper bound, and in particular it can be zero.
+
+\begin{lemma}[$\CMSymbol$ is binding]
+\label{lemma:cm-binding}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. For every query bound $\ROQueryBound \in \Naturals$ and $\ROQueryBound$-query algorithm $\CMAdversary$ (that outputs a commitment $\CMCommitment$, messages $\CMMessage_{0},\CMMessage_{0}$, and salts $\CMSaltString_{0},\CMSaltString_{1}$), if $\ROQueryBound \geq 2$ then
+\begin{equation*}
+\Pr\left[
+\begin{array}{l}
+\CMMessage_{0} \neq \CMMessage_{1} \\
+\land\;\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{0},\CMSaltString_{0})=1 \\
+\land\;\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{1},\CMSaltString_{1})=1
+\end{array}
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+(\CMCommitment,\CMMessage_{0},\CMSaltString_{0},\CMMessage_{1},\CMSaltString_{1}) \gets \CMAdversary^{\ROFunction}
+}
+\right]
+\leq
+\CMBindingExpression{\ROOutputSize}{\ROQueryBound}
+\enspace.
+\end{equation*}
+\end{lemma}
+
+\begin{proof}
+The condition in the probability statement is, by definition of $\CMCheck$, equivalent to
+\begin{equation*}
+\CMMessage_{0} \neq \CMMessage_{1}
+\TextAndInMath
+\ROFunction(\CMMessage_{0},\CMSaltString_{0})
+=
+\ROFunction(\CMMessage_{1},\CMSaltString_{1})
+\enspace.
+\end{equation*}
+In particular, $(\CMMessage_{0},\CMSaltString_{0})$ and $(\CMMessage_{1},\CMSaltString_{1})$ form a collision for $\ROFunction$.
+
+Let $\Event$ be the event that $\CMAdversary$ makes the queries $(\CMMessage_{0},\CMSaltString_{0})$ and $(\CMMessage_{1},\CMSaltString_{1})$ to $\ROFunction$ (i.e., the query-answer trace of $\CMAdversary$ contains $(\CMMessage_{0},\CMSaltString_{0})$ and $(\CMMessage_{1},\CMSaltString_{1})$ as queries). We distinguish between two cases.
+\begin{itemize}
+  \item \emph{Case 1: $\CMAdversary$ wins the binding game and $\Event$ does not hold.} In this case $\CMAdversary$ outputs $(\CMMessage_{0},\CMSaltString_{0})$ and $(\CMMessage_{1},\CMSaltString_{1})$ that are a collision and either:
+\begin{inparaenum}[(i)]
+  \item neither pair was queried, or
+  \item exactly one pair was queried.
+\end{inparaenum}
+By the unpredictability property of a random oracle (\Cref{lemma:rom-not-queried-pair}), the probability that either happens is $\ROPExpression{\ROOutputSize}$ because, in either case, $\CMAdversary$ outputs a string that is not part of the query-answer trace $\ROTrace$ and the random oracle $\ROFunction$ maps to a certain output.
+
+  \item \emph{Case 2: $\CMAdversary$ wins the binding game and $\Event$ holds.} In this case the query-answer trace $\ROTrace$ of $\CMAdversary$ contains a collision, because $(\CMMessage_{0},\CMSaltString_{0})$ and $(\CMMessage_{1},\CMSaltString_{1})$ are contained in $\ROTrace$ and satisfy $\ROFunction(\CMMessage_{0},\CMSaltString_{0}) = \ROFunction(\CMMessage_{1},\CMSaltString_{1})$. By \Cref{lemma:rom-cr} the probability that $\ROTrace$ contains a collision is at most $\ROCRExpression{\ROOutputSize}{\ROQueryBound}$.
+
+\end{itemize}
+We conclude that
+\begin{align*}
+&\Pr\left[
+\begin{array}{c}
+\text{$\CMAdversary$ wins the} \\
+\text{binding game}
+\end{array}
+\right] \\
+=&
+\Pr\left[
+\begin{array}{c}
+\text{$\CMAdversary$ wins the} \\
+\text{binding game}
+\end{array}
+\land
+\Event
+\right]
++
+\Pr\left[
+\begin{array}{c}
+\text{$\CMAdversary$ wins the} \\
+\text{binding game}
+\end{array}
+\land
+\Negate{\Event}
+\right]
+\\ \leq &
+\frac{1}{2} \cdot \frac{(\ROQueryBound-1) \cdot \ROQueryBound}{2^{\ROOutputSize}} + \frac{1}{2^{\ROOutputSize}}
+\\ = &
+\frac{1}{2} \cdot \frac{\ROQueryBound^2 - \ROQueryBound + 2}{2^{\ROOutputSize}}
+\enspace.
+\end{align*}
+Finally, if $\ROQueryBound \geq 2$ then the last expression above is at most $\CMBindingExpression{\ROOutputSize}{\ROQueryBound}$.
+\end{proof}
+
+\begin{remark}[statistical binding]
+\label{remark:cm-statistical-binding}
+The binding property of $\CMSymbol$ in \Cref{lemma:cm-binding} is \emph{computational} because the binding error $\CMBindingExpression{\ROOutputSize}{\ROQueryBound}$ is small only if the adversary makes a bounded number of queries $\ROQueryBound$ to the random oracle. However, if the output size $\ROOutputSize$ of the random oracle is large enough, then $\CMSymbol$ achieves \emph{statistical} binding, namely, a binding property that holds event against adversaries that make an unbounded number of queries to the random oracle (think of $\ROQueryBound=\infty$). The statistical security comes from the simple fact that, if $\ROOutputSize$ is large enough, the commitment scheme $\CMSymbol$ is \emph{injective} with high probability over the choice of random oracle, in which case each commitment has a single preimage (and thus \DoQuote{collisions} do not exist).
+
+To see this, we upper bound the probability that the commitment scheme $\CMSymbol$ is not injective:
+\begin{align*}
+& \Pr\left[
+\begin{array}{l}
+\exists\,\CMMessage_{0}, \CMMessage_{1} \in \Bits^{\CMMessageLength}
+\text{ with } \CMMessage_{0} \neq \CMMessage_{1} \\
+\exists\,\CMSaltString_{0},\CMSaltString_{1} \in \Bits^{\CMSaltSize}
+\end{array}
+\text{ s.t. }
+\CMCommit(\CMMessage_{0},\CMSaltString_{0}) = \CMCommit(\CMMessage_{1},\CMSaltString_{1})
+\right]
+\\ & \leq
+2^{2 \cdot (\CMMessageLength + \CMSaltSize)} \cdot \Pr[
+\CMCommit(0^{\CMMessageLength},0^{\CMSaltSize})
+=
+\CMCommit(1^{\CMMessageLength},0^{\CMSaltSize})]
+\\ & =
+2^{2 \cdot (\CMMessageLength + \CMSaltSize)} \cdot
+\frac{1}{2^{\ROOutputSize}}
+\\ & =
+\frac{1}{2^{\ROOutputSize - 2 \cdot (\CMMessageLength + \CMSaltSize)}}
+\enspace.
+\end{align*}
+We conclude that the probability that $\CMSymbol$ is injective is at least $1-\frac{1}{2^{\ROOutputSize - 2 \cdot (\CMMessageLength + \CMSaltSize)}}$, which is close to $1$ if $\ROOutputSize \gg 2 \cdot (\CMMessageLength + \CMSaltSize)$. This regime of parameters is, however, not relevant for the setting of succinct arguments (where we need the commitment size $\ROOutputSize$ to be much smaller than the message size $\CMMessageLength$), and so we limit the discussion of statistical binding to this remark.
+
+Note that, conversely, whenever the commitment scheme $\CMSymbol$ is not injective (with respect to messages), an adversary that makes sufficiently many queries to the random oracle can indeed find distinct messages $\CMMessage_{0}$ and $\CMMessage_{1}$ such that $\CMCommit(\CMMessage_{0},\CMSaltString_{0}) = \CMCommit(\CMMessage_{1},\CMSaltString_{1})$ for some salts $\CMSaltString_{0}$ and $\CMSaltString_{1}$, and thereby break the binding property.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Extractability}
+\label{section:basic-commitment-extractability}
+
+We prove that $\CMSymbol$ is \emph{extractable}, which informally means that if an adversary outputs a commitment that it subsequently opens then the adversary \DoQuote{knew} the opening at commitment time. In \Cref{section:basic-commitment-single-extractability} we study this property for one commitment and in \Cref{section:basic-commitment-multi-extractability} we study it for multiple commitments; then in \Cref{section:basic-commitment-extractability-implies-binding} we explain how extractability implies binding.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Extraction for one commitment}
+\label{section:basic-commitment-single-extractability}
+
+The extractability property is formalized via an efficient algorithm $\CMExtractor$ called an \emph{extractor}. We consider an experiment of the following form.
+\begin{itemize}
+
+  \item In a commitment phase, the adversary, given oracle access to the random oracle, performs a computation and outputs a commitment $\CMCommitment$ and a private state $\ROAdvState$. Let $\ROTrace$ be the query-answer trace of the adversary in this phase.
+
+  \item Then, in an opening phase, the adversary, given oracle access to the random oracle and as input the private state $\ROAdvState$, continues its computation and outputs a message $\CMMessage$ and salt $\CMSaltString$.
+
+\end{itemize}
+Extractability states that if the adversary's output message $\CMMessage$ and salt $\CMSaltString$ are a valid opening of the previously-output commitment $\CMCommitment$ then the extractor $\CMExtractor$, given the commitment $\CMCommitment$ and the query-answer trace $\ROTrace$, \emph{also} outputs the same message $\CMMessage$ and salt $\CMSaltString$, up to a small error. In other words, the adversary \DoQuote{knew} the opening $(\CMCommitment,\CMSaltString)$ in the commitment phase because $\CMExtractor$ finds $(\CMCommitment,\CMSaltString)$ by examining only the query-answer trace of the adversary relevant for producing the commitment (without seeing the subsequent query-answer trace in the opening phase).
+
+The lemma below formally states the property and bounds the extraction error, which happens to be the same as the binding error in \Cref{lemma:cm-binding}.
+
+\begin{lemma}[$\CMSymbol$ is extractable]
+\label{lemma:cm-extractability}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. There exists a polynomial-time deterministic algorithm $\CMExtractor$ such that for every query bound $\ROQueryBound \in \Naturals$ and $\ROQueryBound$-query algorithm $\CMAdversary$, if $\ROQueryBound \geq 3$ then
+\begin{equation*}
+\Pr\left[
+\begin{array}{l}
+\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage,\CMSaltString)=1 \\
+\land\;(\CMMessage',\CMSaltString') \neq (\CMMessage,\CMSaltString)
+\end{array}
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+\ROOutputAndTrace{\ROFunction}{\CMAdversary}{\ROTrace}{(\CMCommitment,\ROAdvState)} \\
+(\CMMessage',\CMSaltString') \gets \CMExtractor(\CMCommitment,\ROTrace) \\
+(\CMMessage,\CMSaltString) \gets \CMAdversary^{\ROFunction}(\ROAdvState)
+}
+\right]
+\leq
+\CMExtractabilityExpression{\ROOutputSize}{\ROQueryBound}
+\enspace.
+\end{equation*}
+Moreover, $\CMExtractor$ runs in time $O\big(\ROQueryBound \cdot (\CMMessageLength + \CMSaltSize + \ROOutputSize)\big)$.
+\end{lemma}
+
+\begin{proof}
+We define the extractor $\CMExtractor$ as follows.
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+$\CMExtractor(\CMCommitment,\ROTrace)$:
+Search the trace $\ROTrace$ for a query-answer pair of the form $((\CMMessage',\CMSaltString'),\CMCommitment)$, where $\CMMessage' \in \Bits^{\CMMessageLength}$ is a message and $\CMSaltString' \in \Bits^{\CMSaltSize}$ is a salt. If no such pair exists in $\ROTrace$ then abort. If such a pair is found then output $(\CMMessage',\CMSaltString')$.
+\end{minipage}
+\end{center}
+The extractor has the stated time complexity because it scans a query-answer trace consisting of at most $\ROQueryBound$ entries, in order to search for a $(\CMMessageLength + \CMSaltSize + \ROOutputSize)$-bit entry where the answer equals $\CMCommitment$.
+
+We argue that the extractor satisfies the statement.
+
+Fix any $\ROQueryBound_{1},\ROQueryBound_{2} \in \Naturals$ such that $\ROQueryBound_{1} + \ROQueryBound_{2} \leq \ROQueryBound$. Let $\ROTrace'$ be the query-answer trace of the computation $(\CMMessage,\CMSaltString) \gets \CMAdversary^{\ROFunction}(\ROAdvState)$. We prove the upper bound of $\CMExtractabilityExpression{\ROOutputSize}{\ROQueryBound}$ conditioned on the event that $\ROQueryBound_{1} = \Cardinality{\ROTrace}$ and $\ROQueryBound_{2} = \Cardinality{\ROTrace'}$. Then the lemma follows because this upper bound holds for every $\ROQueryBound_{1},\ROQueryBound_{2} \in \Naturals$ such that $\ROQueryBound_{1} + \ROQueryBound_{2} \leq \ROQueryBound$, and every computation of the $\ROQueryBound$-query adversary $\CMAdversary$ implies a setting of $\ROQueryBound_{1},\ROQueryBound_{2}$.
+
+If $\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage,\CMSaltString)=1$ and $\CMExtractor(\CMCommitment,\ROTrace)$ outputs $(\CMMessage',\CMSaltString')$ such that $(\CMMessage',\CMSaltString') \neq (\CMMessage,\CMSaltString)$ then one of the following cases must hold.
+\begin{itemize}
+
+  \item There are two or more queries in the query-answer trace $\ROTrace$ whose answer is $\CMCommitment$. By \Cref{lemma:rom-cr} the probability that this happens is at most $\ROCRExpression{\ROOutputSize}{\ROQueryBound_{1}}$.
+
+  \item There exists a query $(\CMMessage_{j},\CMSaltString_{j})$ in $\ROTrace'$ whose answer is $\CMCommitment$ that is not a query in $\ROTrace$. For every query $(\CMMessage_{j},\CMSaltString_{j})$ in $\ROTrace'$, the probability that $\ROFunction(\CMMessage_{j},\CMSaltString_{j}) = \CMCommitment$ is $\ROPExpression{\ROOutputSize}$. Hence by a union bound the probability that there exists such a query is at most $\ROQueryBound_{2} \cdot \ROPExpression{\ROOutputSize}$.
+
+  \item The adversary $\CMAdversary$ outputs $(\CMMessage,\CMSaltString)$ such that $ \ROFunction(\CMMessage,\CMSaltString)=\CMCommitment$ but $((\CMMessage,\CMSaltString),\CMCommitment)$ is not a query-answer pair in $\ROTrace$ or $\ROTrace'$. By \Cref{lemma:rom-not-queried-pair}, the probability that this happens is at most $\ROPExpression{\ROOutputSize}$.
+
+\end{itemize}
+We conclude that the extraction error is at most
+\begin{align*}
+&\ROCRExpression{\ROOutputSize}{\ROQueryBound_{1}}
++ \ROQueryBound_{2} \cdot \ROPExpression{\ROOutputSize}
++ \ROPExpression{\ROOutputSize} \\
+&= \frac{1}{2} \cdot \frac{\ROQueryBound_{1}^2-\ROQueryBound_{1}+2\ROQueryBound_{2}+2}{2^{\ROOutputSize}} \\
+&\leq \frac{1}{2} \cdot \frac{\ROQueryBound_{1}^2-\ROQueryBound_{1}+2(\ROQueryBound-\ROQueryBound_{1})+2}{2^{\ROOutputSize}} \EquationComment{since $\ROQueryBound_{1}+\ROQueryBound_{2} \leq \ROQueryBound$} \\
+&= \frac{1}{2} \cdot \frac{\ROQueryBound_{1}^2-3\ROQueryBound_{1}+2\ROQueryBound+2}{2^{\ROOutputSize}} \\
+&\leq \frac{1}{2} \cdot \frac{\max\{2\ROQueryBound+2,\ROQueryBound^2-\ROQueryBound+2\}}{2^{\ROOutputSize}}
+\enspace.
+\end{align*}
+The last inequality is due to the fact that the expression is a convex function in $\ROQueryBound_{1}$ so its maximum on the interval $\ROQueryBound_{1} \in \{0,1,\dots,\ROQueryBound\}$ is achieved at either $\ROQueryBound_{1}=0$ or $\ROQueryBound_{1}=\ROQueryBound$.
+
+Finally, if $\ROQueryBound \geq 3$ then the last expression above is at most $\frac{1}{2} \cdot \frac{\ROQueryBound^2-\ROQueryBound+2}{2^{\ROOutputSize}}$ (in the maximum the first term is at most the second term), which in turn is at most $\CMExtractabilityExpression{\ROOutputSize}{\ROQueryBound}$.
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Extraction for multiple commitments}
+\label{section:basic-commitment-multi-extractability}
+
+We discuss how extractability extends to adversaries that output \emph{multiple} commitments. This serves as a warm up to similar properties that we study for Merkle commitments in \Cref{chapter:merkle-commitment}, which we use to analyze constructions of succinct arguments that involve multiple commitments.
+
+We wish to prove that for any commitment that the adversary subsequently opens successfully, the extractor is able to find a corresponding opening while only given the query-answer trace of the adversary up to the point of producing that commitment. (We cannot expect to say anything about commitments that the adversary outputs but does not open successfully.)
+
+We consider an experiment of the following form.
+\begin{itemize}
+
+  \item In a commitment phase, the adversary, given oracle access to the random oracle, performs a stateful computation during which it outputs $\CMNumCommitments$ commitments $\CMCommitment_{1},\dots,\CMCommitment_{\CMNumCommitments}$. Let $\ROAdvState_{i}$ be the private state of the adversary when it outputs $\CMCommitment_{i}$, and let $\ROTrace_{i}$ be the query-answer trace of the adversary between outputting the $(i-1)$-th commitment and the $i$-th commitment.
+
+  \item Then, in an opening phase, the adversary, given oracle access to the random oracle and as input the private state $\ROAdvState_{\CMNumCommitments}$, concludes its computation and outputs $\CMNumCommitments$ message-salt pairs $\big((\CMMessage_{i},\CMSaltString_{i})\big)_{i \in [\CMNumCommitments]}$.
+
+\end{itemize}
+We wish to prove that, for every $i \in [\CMNumCommitments]$, if the message $\CMMessage_{i}$ and salt $\CMSaltString_{i}$ are a valid opening of the previously-output commitment $\CMCommitment_{i}$ then an extractor $\CMMultiExtractor$, given the commitment $\CMCommitment_{i}$ and the query-answer trace $\ROTrace_{1} \concat \cdots \concat \ROTrace_{i}$ (all the query-answer pairs leading to outputting $\CMCommitment_{i}$), \emph{also} outputs the same message $\CMMessage_{i}$ and salt $\CMSaltString_{i}$, up to a small error.
+
+Intuitively, such a statement should follow directly from \Cref{lemma:cm-extractability} via a union bound: if the adversary outputs $\CMNumCommitments$ commitments and subsequently $\CMNumCommitments$ openings, then the probability that there exists one of the openings that is valid but the extractor did not succeed for the corresponding commitment is at most $\CMNumCommitments$ times the error in \Cref{lemma:cm-extractability}.
+
+Perhaps surprisingly, the multiplicative loss of $\CMNumCommitments$ can be avoided. The dominant error incurred in extraction is linked to a global event rather than an event specific to one or another commitment. Indeed, from the proof of \Cref{lemma:cm-extractability}, extraction for a particular commitment fails if the query-answer trace either contains multiple queries whose answer is the commitment (the adversary found a collision) or does not contain a query whose answer is the commitment (the adversary guessed the answer). The former event is global and leads to the dominant error, while the latter event is specific to a single commitment and hence is incurred once per commitment.
+
+This leads to a lemma with the error bound below. We let $\CMMultiExtractor$ be a \emph{stateful} algorithm; hence $\CMMultiExtractor$ may store information from prior invocations and so it suffices, in its $i$-th invocation, to receive only the commitment and query-answer trace corresponding to the $i$-th output of the adversary. Maintaining state across invocations also enables efficiency improvements.
+
+\begin{lemma}[$\CMSymbol$ is multi-extractable]
+\label{lemma:cm-multi-extractability}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. There exists a polynomial-time deterministic \textbf{stateful} algorithm $\CMMultiExtractor$ such that for every query bound $\ROQueryBound \in \Naturals$, $\ROQueryBound$-query algorithm $\CMAdversary$, and number of commitments $\CMNumCommitments \in \Naturals$, if $\ROQueryBound \geq 2\CMNumCommitments$ then
+\begin{align*}
+&\Pr\left[
+\begin{array}{l}
+\exists\,i \in [\CMNumCommitments] \text{ such that:} \\
+\CMCheck^{\ROFunction}(\CMCommitment_{i},\CMMessage_{i},\CMSaltString_{i})=1 \\
+\land\;(\CMMessage_{i}',\CMSaltString_{i}') \neq (\CMMessage_{i},\CMSaltString_{i})
+\end{array}
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+\text{For $i=1,\dots,\CMNumCommitments$:} \\
+\IndentedBullet\ROInputOutputAndTrace{\ROFunction}{\CMAdversary}{\ROAdvState_{i-1}}{\ROTrace_{i}}{(\CMCommitment_{i},\ROAdvState_{i})} \\
+\IndentedBullet(\CMMessage_{i}',\CMSaltString_{i}') \gets \CMMultiExtractor(\CMCommitment_{i},\ROTrace_{i}) \\
+\big((\CMMessage_{i},\CMSaltString_{i})\big)_{i \in [\CMNumCommitments]} \gets \CMAdversary^{\ROFunction}(\ROAdvState_{\CMNumCommitments})
+}
+\right]
+\\&\leq
+\CMMultiExtractabilityExpression{\ROOutputSize}{\ROQueryBound}{\CMNumCommitments}
+\enspace.
+\end{align*}
+Above we denote by $\ROAdvState_{0}$ the empty string for notational simplicity.
+
+Moreover, $\CMMultiExtractor$ runs in time $O\big( \CMNumCommitments \cdot \ROQueryBound \cdot (\CMMessageLength + \CMSaltSize + \ROOutputSize) \big)$ (across the $\CMNumCommitments$ invocations).
+\end{lemma}
+
+We provide an intuitive justification for the error expression above, for simplicity for the case with no salts ($\CMSaltSize = 0$). Consider the following adversary. For the first $\CMNumCommitments-1$ commitments, the adversary performs no queries and simply outputs random commitment strings $(\CMCommitment_{i})_{i \in [\CMNumCommitments-1]}$. Then the adversary performs $\ROQueryBound$ distinct queries, using all of its query budget in the last trace $\ROTrace_{\CMNumCommitments}$. If there exists two distinct queries $\ROQuery_{1}$ and $\ROQuery_{2}$ such that $\ROFunction(\ROQuery_{1}) = \ROFunction(\ROQuery_{2})$, then the adversary outputs $\CMCommitment_{\CMNumCommitments} \DefineEqual \ROFunction(\ROQuery_{1})$ and wins (the adversary can open $\CMCommitment_{\CMNumCommitments}$ in two ways). This explains the first term of the error bound. Otherwise, if there exists a query $\ROQuery$ with a response $\ROAnswer \in \{\CMCommitment_{i}\}_{i \in [\CMNumCommitments-1]}$, then the adversary also wins (if $\ROAnswer = \CMCommitment_{i}$ then the extractor fails on $\CMCommitment_{i}$ because it runs given an empty trace while the adversary can open $\CMCommitment_{i}$). This explains the second term in the error bound, as each query has a probability of $\frac{\CMNumCommitments-1}{2^{\ROOutputSize}}$ to hit a previous commitment.
+
+\begin{proof}
+The stateful extractor $\CMMultiExtractor$ is similar to the (stateless) extractor $\CMExtractor$ in the proof of \Cref{lemma:cm-extractability}. The extractor $\CMMultiExtractor$ internally maintains the concatenation of all query-answer traces received so far (after the $i$-th invocation it stores the trace $\ROTrace \DefineEqual \ROTrace_{1} \concat \cdots \concat \ROTrace_{i}$), and uses this trace to search for the message and salt corresponding to the given commitment.
+\begin{itemize}
+
+  \item[] $\CMMultiExtractor(\CMCommitment_{i},\ROTrace_{i})$:
+  \begin{enumerate}[nolistsep]
+    \item Append $\ROTrace_{i}$ to the query-answer trace $\ROTrace$ stored in the internal state.
+    \item Run $\CMExtractor$ on input $(\CMCommitment_{i},\ROTrace)$. (Search the trace $\ROTrace$ for a query-answer pair of the form $((\CMMessage'_{i},\CMSaltString'_{i}),\CMCommitment_{i})$, where $\CMMessage'_{i} \in \Bits^{\CMMessageLength}$ is a message and $\CMSaltString'_{i} \in \Bits^{\CMSaltSize}$ is a salt. If no such pair exists in $\ROTrace$ then abort. If such a pair is found then output $(\CMMessage'_{i},\CMSaltString'_{i})$.)
+  \end{enumerate}
+\end{itemize}
+By \Cref{lemma:cm-extractability} each invocation of $\CMExtractor$ runs in time at most $O\big(\ROQueryBound \cdot (\CMMessageLength + \CMSaltSize + \ROOutputSize) \big)$, because the stored query-answer trace contains at most $\ROQueryBound$ entries. The $\CMNumCommitments$ invocations yield the claimed total running time. The time complexity can be improved via a suitable use of dynamic data structures in the internal state (and foregoing $\CMExtractor$ as a subroutine); see \Cref{remark:cm-multi-extractor-efficient-implementation}.
+
+We argue that the extractor satisfies the statement.
+
+Fix any $\ROQueryBound_{1},\ROQueryBound_{2} \in \Naturals$ such that $\ROQueryBound_{1} + \ROQueryBound_{2} \leq \ROQueryBound$. Let $\ROTrace'$ be the query-answer trace of the computation $\big((\CMMessage_{i},\CMSaltString_{i})\big)_{i \in [\CMNumCommitments]} \gets \CMAdversary^{\ROFunction}(\ROAdvState_{\CMNumCommitments})$. We prove the upper bound of $\CMMultiExtractabilityExpression{\ROOutputSize}{\ROQueryBound}{\CMNumCommitments}$ conditioned on the event that $\ROQueryBound_{1} = \Cardinality{\ROTrace_{1} \concat \cdots \concat \ROTrace_{\CMNumCommitments}}$ and $\ROQueryBound_{2} = \Cardinality{\ROTrace'}$. Then the lemma follows because this upper bound holds for every $\ROQueryBound_{1},\ROQueryBound_{2} \in \Naturals$ such that $\ROQueryBound_{1} + \ROQueryBound_{2} \leq \ROQueryBound$, and every computation of the $\ROQueryBound$-query adversary $\CMAdversary$ implies a setting of $\ROQueryBound_{1},\ROQueryBound_{2}$.
+
+If there exists $i \in [\CMNumCommitments]$ such that $\CMCheck^{\ROFunction}(\CMCommitment_{i},\CMMessage_{i},\CMSaltString_{i})=1$ and $\CMMultiExtractor(\CMCommitment_{i},\ROTrace_{i})$ outputs $(\CMMessage_{i}',\CMSaltString_{i}')$ such that $(\CMMessage_{i}',\CMSaltString_{i}') \neq (\CMMessage_{i},\CMSaltString_{i})$ then one of the following cases must hold.
+\begin{itemize}
+
+  \item \emph{Collision.} The adversary finds a collision in the trace. That is, there are two or more queries in the query-answer trace $\ROTrace_{1} \concat \cdots \concat \ROTrace_{\CMNumCommitments}$ with the same answer (in particular, whose answer is one of $\{ \CMCommitment_{i} \}_{i \in [\CMNumCommitments]}$). By \Cref{lemma:rom-cr} the probability that this happens is at most $\ROCRExpression{\ROOutputSize}{\ROQueryBound_{1}}$.
+
+  \item \emph{Inversion.} The adversary inverts one of the previously given commitments. That is, there exists $i \in [\CMNumCommitments]$ and a query $(\CMMessage,\CMSaltString)$ in $\ROTrace_{i+1} \concat \cdots \concat \ROTrace_{\CMNumCommitments} \concat \ROTrace'$ whose answer is $\CMCommitment_{i}$ that is not a query in $\ROTrace_{1} \concat \cdots \concat \ROTrace_{i}$. For every query $(\CMMessage,\CMSaltString)$ in $\ROTrace_{i+1} \concat \cdots \concat \ROTrace_{\CMNumCommitments} \concat \ROTrace'$, the probability that $\ROFunction(\CMMessage,\CMSaltString)  = \CMCommitment_{i}$ is at most $\ROPExpression{\ROOutputSize}$. Hence by a union bound over $i \in [\CMNumCommitments]$ and all queries, the probability that there exists such an $i \in [\CMNumCommitments]$ and a query is at most $(\ROQueryBound_{1}+\ROQueryBound_{2}) \cdot \frac{\CMNumCommitments}{2^{\ROOutputSize}}$.
+
+  \item \emph{Pure luck.} The adversary is lucky, and $\CMCheck$ accepts even though no collisions or inversions where found. That is, there exists $i \in [\CMNumCommitments]$ such that the adversary $\CMAdversary$ outputs $(\CMMessage,\CMSaltString)$ with $\ROFunction(\CMMessage,\CMSaltString) = \CMCommitment_{i}$ but $((\CMMessage,\CMSaltString),\CMCommitment_{i})$ is not a query-answer pair in $\ROTrace_{1} \concat \cdots \concat \ROTrace_{\CMNumCommitments} \concat \ROTrace'$. By \Cref{lemma:rom-not-queried-pair}, the probability that this happens is at most $\ROPExpression{\ROOutputSize}$. Taking a union bound over $i \in [\CMNumCommitments]$, the probability there exists such an $i \in [\CMNumCommitments]$ is at most $\CMNumCommitments \cdot \ROPExpression{\ROOutputSize}$.
+
+\end{itemize}
+We conclude that the extraction error is at most
+\begin{align*}
+&\ROCRExpression{\ROOutputSize}{\ROQueryBound_{1}}
++ (\ROQueryBound_{1}+\ROQueryBound_{2}) \cdot \frac{\CMNumCommitments}{2^{\ROOutputSize}}
++ \frac{\CMNumCommitments}{2^{\ROOutputSize}} \\
+&=
+\frac{1}{2} \cdot \frac{\ROQueryBound_{1}^2-\ROQueryBound_{1}+2\CMNumCommitments}{2^{\ROOutputSize}}
++ (\ROQueryBound_{1}+\ROQueryBound_{2}) \cdot \frac{\CMNumCommitments}{2^{\ROOutputSize}} \\
+&\leq
+\frac{1}{2} \cdot \frac{\ROQueryBound^2-\ROQueryBound+2\CMNumCommitments}{2^{\ROOutputSize}}
++ \ROQueryBound \cdot \frac{\CMNumCommitments}{2^{\ROOutputSize}}
+\enspace.
+\end{align*}
+Finally, if $\ROQueryBound \geq 2\CMNumCommitments$ then the last expression above is at most $\CMMultiExtractabilityExpression{\ROOutputSize}{\ROQueryBound}{\CMNumCommitments}$ (itself at most $\frac{\ROQueryBound^2}{2^{\ROOutputSize}}$).
+\end{proof}
+
+\begin{remark}[time complexity of $\CMMultiExtractor$]
+\label{remark:cm-multi-extractor-efficient-implementation}
+The running time of $\CMMultiExtractor$ stated in \Cref{lemma:cm-multi-extractability} can be improved, by maintaining a \emph{sorted} trace in order to support fast searching. At the start, $\CMMultiExtractor$ initializes an empty search tree that supports inserts and searches in logarithmic time complexity (e.g., an AVL tree). At the $i$-th invocation of $\CMMultiExtractor$, given input $(\CMCommitment_{i},\ROTrace_{i})$, do the following: insert into the search tree the query-answer pairs of $\ROTrace_{i}$ one by one; then search the search tree for a query-answer pair of the form $((\CMMessage'_{i},\CMSaltString'_{i}),\CMCommitment_{i})$ (and abort if no such pair is found). The running time of this implementation is $O((\ROQueryBound + \CMNumCommitments) \cdot \log \ROQueryBound \cdot (\CMMessageLength + \CMSaltSize + \ROOutputSize))$ (the multiplicative term $(\ROQueryBound + \CMNumCommitments) \cdot \log \ROQueryBound$ replaces $\CMNumCommitments \cdot \ROQueryBound$), as we now explain. Each element in the trace consists of $O(\CMMessageLength + \CMSaltSize + \ROOutputSize)$ bits, and there are at most $\ROQueryBound$ elements. Hence, each insert or search operation takes time $O((\CMMessageLength + \CMSaltSize + \ROOutputSize) \cdot \log \ROQueryBound)$. The total number of insert and search operations is $\ROQueryBound + \CMNumCommitments$ ($\ROQueryBound$ inserts and $\CMNumCommitments$ searches), yielding the claimed time.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Extractability implies binding}
+\label{section:basic-commitment-extractability-implies-binding}
+
+The extractability property in \Cref{lemma:cm-extractability} is a strong security guarantee: any bounded-query adversary that opens a commitment must have \DoQuote{known} the opening at commitment time. In fact, \emph{extractability is stronger than binding}: we show that if $\CMSymbol$ satisfies extractability with error $\CMExtractionError$ then $\CMSymbol$ satisfies binding with error $\CMBindingError \leq 2 \cdot \CMExtractionError$ (a closely related error).\footnote{This implication loses a factor of $2$, and we present it merely for didactic purposes. Indeed, for $\CMSymbol$ we prove almost the same errors in \Cref{lemma:cm-binding} (binding error) and \Cref{lemma:cm-extractability} (extraction error).}
+
+Let $\CMAdversary$ be a $\ROQueryBound$-query algorithm that opens a commitment in two ways with probability $\CMBindingError$:
+\begin{equation*}
+\CMBindingError
+\DefineEqual
+\Pr\left[
+\begin{array}{l}
+  \CMMessage_{0} \neq \CMMessage_{1} \\
+  \land\;\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{0},\CMSaltString_{0})=1 \\
+  \land\;\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{1},\CMSaltString_{1})=1
+\end{array}
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+(\CMCommitment,\CMMessage_{0},\CMSaltString_{0},\CMMessage_{1},\CMSaltString_{1}) \gets \CMAdversary^{\ROFunction}
+}
+\right]
+\enspace.
+\end{equation*}
+
+Let $\CMAdversary_{e}$ be the $\ROQueryBound$-query algorithm for the extraction game that is defined as follows.
+\begin{itemize}[noitemsep]
+  \item $\CMAdversary_{e}^{\ROFunction}$: Run $\CMAdversary^{\ROFunction}$ to get $(\CMCommitment,\CMMessage_{0},\CMSaltString_{0},\CMMessage_{1},\CMSaltString_{1})$, set $\ROAdvState \DefineEqual (\CMMessage_{0},\CMSaltString_{0},\CMMessage_{1},\CMSaltString_{1})$, and output $(\CMCommitment,\ROAdvState)$.
+  \item $\CMAdversary_{e}^{\ROFunction}(\ROAdvState)$: Sample a random bit $b$ (by using private randomness or via a fresh additional query to the random oracle) and output the message and salt $(\CMMessage_{b},\CMSaltString_{b})$ stored in $\ROAdvState$.
+\end{itemize}
+Fix any candidate extractor $\CMExtractor$. Consider an output $(\CMCommitment,\CMMessage_{0},\CMSaltString_{0},\CMMessage_{1},\CMSaltString_{1})$ of $\CMAdversary$ that breaks the binding property (i.e., satisfies the conditions in the probability statement above). If we run $\CMExtractor$ on $\CMCommitment$ (the commitment output by $\CMAdversary_{e}$ in the first step) and $\ROTrace$ (the query-answer trace by $\CMAdversary_{e}$ in the first step) then we obtain an output $(\CMMessage,\CMSaltString)$ that, with probability at least $1/2$, satisfies $(\CMMessage,\CMSaltString) \neq (\CMMessage_{b},\CMSaltString_{b})$. This is because the inputs to the extractor $\CMExtractor$ are independent of the bit $b$ (which is sampled by $\CMAdversary_{e}$ after the inputs to $\CMExtractor$ are determined). Moreover, by the definition of $\CMAdversary_{e}$, we know that $\CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{b},\CMSaltString_{b})=1$ regardless of the choice of bit $b$. We deduce that
+\begin{equation*}
+\frac{1}{2} \cdot \CMBindingError \leq
+\Pr\left[
+\begin{array}{l}
+  \CMCheck^{\ROFunction}(\CMCommitment,\CMMessage_{b},\CMSaltString_{b})=1 \\
+  \land\;(\CMMessage,\CMSaltString) \neq (\CMMessage_{b},\CMSaltString_{b})
+\end{array}
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  \ROOutputAndTrace{\ROFunction}{\CMAdversary_{e}}{\ROTrace}{(\CMCommitment,\ROAdvState)} \\
+  (\CMMessage,\CMSaltString) \gets \CMExtractor(\CMCommitment,\ROTrace) \\
+  (\CMMessage_{b},\CMSaltString_{b}) \gets \CMAdversary_{e}^{\ROFunction}(\ROAdvState)
+}
+\right]
+\enspace.
+\end{equation*}
+We conclude that any extraction error $\CMExtractionError$ that can be proved must satisfy the relation $\frac{1}{2} \cdot \CMBindingError \leq \CMExtractionError$ which gives us the desired bound on the binding error $\CMBindingError$.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Hiding}
+\label{section:basic-commitment-hiding}
+
+We prove that $\CMSymbol$ is \emph{hiding}, which informally means that a commitment $\CMCommitment$ computed as $\ROFunction(\CMMessage,\CMSaltString)$ for a random $\CMSaltString \in \Bits^{\CMSaltSize}$ reveals no information about $\CMMessage$, up to a small statistical \DoQuote{leakage} error.
+
+In more detail, we compare the output of an adversary $\CMAdversary^{\ROFunction}(\CMCommitment)$ in two cases:
+\begin{itemize}[noitemsep]
+  \item $\CMCommitment$ is computed as $\ROFunction(\CMMessage,\CMSaltString)$;
+  \item $\CMCommitment$ is output by a probabilistic algorithm $\CMSimulator$ that is only given oracle access to $\ROFunction$ (and in particular does not know the message $\CMMessage$).
+\end{itemize}
+The hiding property requires that the outputs of the adversary in these two cases are statistically close. Moreover, the adversary may choose the message $\CMMessage$ by querying the random oracle $\ROFunction$.
+
+The statistical distance depends, in general, on several parameters:
+\begin{inparaenum}[(a)]
+  \item the output size $\ROOutputSize \in \Naturals$ of the random oracle;
+  \item the message size $\CMMessageLength \in \Naturals$;
+  \item the salt size $\CMSaltSize \in \Naturals$; and
+  \item the number of queries $\ROQueryBound$ to the random oracle made by the algorithm trying to distinguish between the two distributions.
+\end{inparaenum}
+In the lemma below we also consider the case where $\ROQueryBound=\infty$, which corresponds to adversaries that can make an unbounded number of queries to the random oracle (in order to choose the message and also in order to distinguish between the two distributions).
+
+\begin{lemma}[$\CMSymbol$ is hiding]
+\label{lemma:cm-hiding}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. There exists a polynomial-time probabilistic algorithm $\CMSimulator$ such that for every query bound $\ROQueryBound \in \Naturals$ and $\ROQueryBound$-query algorithm $\CMAdversary$, the following two distributions are $\CMHidingError(\ROOutputSize,\CMMessageLength,\CMSaltSize,\ROQueryBound)$-close in statistical distance
+\begin{equation*}
+\left\{
+\CMAdversary^{\ROFunction}(\ROAdvState,\CMCommitment)
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+(\CMMessage,\ROAdvState) \gets \CMAdversary^{\ROFunction} \\
+(\CMCommitment,\CMSaltString) \gets \CMCommit^{\ROFunction}(\CMMessage)
+}
+\right\}
+\TextAndInMath
+\left\{
+\CMAdversary^{\ROFunction}(\ROAdvState,\CMCommitment)
+\GivenExperiment
+\StateExperiment{
+\ROFunction \gets \RODistribution{\ROOutputSize} \\
+(\CMMessage,\ROAdvState) \gets \CMAdversary^{\ROFunction} \\
+\CMCommitment \gets \CMSimulator^{\ROFunction}
+}
+\right\}
+\enspace.
+\end{equation*}
+Above,
+\begin{equation*}
+\CMHidingError(\ROOutputSize,\CMMessageLength,\CMSaltSize,\ROQueryBound)
+\leq
+\begin{cases}
+\CMHidingExpressionFinite{\CMSaltSize}{\ROQueryBound}
+& \text{ if $\ROQueryBound<\infty$} \\
+\CMHidingExpressionInfinite{\CMSaltSize}
+& \text{ if $\ROQueryBound=\infty$}
+\end{cases}
+\enspace.
+\end{equation*}
+Moreover, $\CMSimulator^{\ROFunction}$ outputs a random string in $\Bits^{\ROOutputSize}$.
+\end{lemma}
+
+Of course, the bound for $\ROQueryBound=\infty$ is also a bound for $\ROQueryBound<\infty$. This is useful when $\ROQueryBound$ is large compared to $\CMSaltSize$, in which case the expression $\ROQueryBound \cdot 2^{-\CMSaltSize}$ is not small anymore.
+
+Below we prove the upper bounds for the two cases, providing intuition before each analysis.
+
+\parhead{The case of $\ROQueryBound<\infty$}
+There is a straightforward $\ROQueryBound$-query distinguishing strategy:
+\begin{itemize}[noitemsep]
+  \item In the first phase, $\CMAdversary^{\ROFunction}$ outputs $\CMMessage \DefineEqual 0^{\CMMessageLength}$ (some fixed arbitrary message) and $\ROAdvState \DefineEqual \bot$.
+  \item In the second phase, $\CMAdversary^{\ROFunction}(\ROAdvState,\CMCommitment)$ repeatedly samples a random salt $\CMSaltString \in \Bits^{\CMSaltSize}$ and checks if $\CMCommitment=\ROFunction(\CMMessage,\CMSaltString)$; if so then it outputs $1$; else if all $\ROQueryBound$ attempts fail then it outputs a random bit $b$.
+\end{itemize}
+In one case, if $\CMCommitment=\ROFunction(\CMMessage,\CMSaltString)$ for a random salt $\CMSaltString$ then the probability that the above strategy guesses this salt is $\Omega(\ROQueryBound \cdot 2^{-\CMSaltSize})$. (One can obtain an explicit constant by applying the inclusion-exclusion principle.) In the other case, if $\CMCommitment$ is a random string in $\Bits^{\ROOutputSize}$ (independent of $\ROFunction$) then, except with probability $2^{\CMSaltSize-\ROOutputSize}$, no salt $\CMSaltString$ satisfies $\CMCommitment=\ROFunction(\CMMessage,\CMSaltString)$. Overall, the distinguishing strategy leads to a statistical distance between the two cases that is $\Omega(\ROQueryBound \cdot 2^{-\CMSaltSize} - 2^{\CMSaltSize-\ROOutputSize})$.
+
+Below we prove that this strategy is essentially optimal when $\ROOutputSize$ is sufficiently larger than $\CMSaltSize$ (e.g., $\ROOutputSize \geq 2\CMSaltSize$), in which case the lower bound becomes $\Omega(\ROQueryBound \cdot 2^{-\CMSaltSize})$. This is because \emph{every} $\ROQueryBound$-query algorithm $\CMAdversary$ achieves a statistical distance that is at most $\ROQueryBound \cdot 2^{-\CMSaltSize}$.
+
+
+\begin{proof}[Proof for $\ROQueryBound<\infty$]
+The adversary $\CMAdversary$ performs queries in two phases: the first phase leads to $\CMAdversary$ choosing the message $\CMMessage$; and the second phase is after $\CMAdversary$ receives the commitment $\CMCommitment$. Let $\ROTrace_{1}$ be the query-answer trace of the first phase and $\ROTrace_{2}$ the query-answer trace of the second phase. Define $\ROQueryBound_{1} \DefineEqual \Cardinality{\ROTrace_{1}}$ and $\ROQueryBound_{2} \DefineEqual \Cardinality{\ROTrace_{2}}$. Note that $\ROQueryBound_{1} + \ROQueryBound_{2} \leq \ROQueryBound$. The final output of $\CMAdversary$ is a deterministic function of the query-answer pairs in the traces $\ROTrace_{1}$ and $\ROTrace_{2}$ and the commitment $\CMCommitment$. In one experiment $\CMCommitment$ is computed as $\ROFunction(\CMMessage,\CMSaltString)$ and in the other experiment it is computed as $\CMSimulator^{\ROFunction}$. By \Cref{claim:function-and-statistical-distance}, the statistical distance between the final output of $\CMAdversary$ in the two experiments is at most the statistical distance between the following two random variables:
+\begin{align*}
+\Big(
+\ROTrace_{1},\ROFunction(\CMMessage,\CMSaltString),\ROTrace_{2}\Big)
+\;\; \text{and} \;\;
+\Big(\ROTrace_{1},\CMSimulator^{\ROFunction},\ROTrace_{2}\Big)
+\enspace.
+\end{align*}
+The simulator $\CMSimulator$ outputs a random string in $\Bits^{\ROOutputSize}$.
+
+Let $\Event$ be the event that $(\CMMessage,\CMSaltString)$ is one of the queries in $\ROTrace_{1}$ or $\ROTrace_{2}$. Conditioned on $\Negate{\Event}$, $\ROFunction(\CMMessage,\CMSaltString)$ is random $\Bits^{\ROOutputSize}$, in which case it is distributed as $\CMSimulator^{\ROFunction}$. Therefore the statistical distance between the two random variables above is at most $\Pr[\Event]$, which we upper bound next.
+
+\begin{claim}
+\label{claim:cm-hiding-hit-query}
+It holds that
+\begin{align*}
+\Pr[\Event]
+=
+\Pr\left[
+\CMAdversary^{\ROFunction}(\ROAdvState,\CMCommitment) \text{ queries } (\CMMessage,\CMSaltString)
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  (\CMMessage,\ROAdvState) \gets \CMAdversary^{\ROFunction} \\
+  \CMSaltString \gets \Bits^{\CMSaltSize} \\
+  \CMCommitment \gets \ROFunction(\CMCommitment,\CMSaltString)
+}
+\right]
+\leq
+\ROOWEntropyExpression{\CMSaltSize}
+\enspace.
+\end{align*}
+\end{claim}
+
+\begin{proof}
+First, we consider the trace $\ROTrace_{1}$. The probability that $(\CMMessage,\CMSaltString)$ is a query in $\ROTrace_{1}$ is at most $\frac{\Cardinality{\ROTrace_{1}}}{2^{\CMSaltSize}} \leq \frac{\ROQueryBound_{1}}{2^{\CMSaltSize}}$, because $\CMCommitment$ is the answer to the query $(\CMMessage,\CMSaltString)$ where $\CMMessage$ is the message chosen by the adversary and $\CMSaltString$ is a random salt $\CMSaltString \in \Bits^{\CMSaltSize}$ sampled independently of $\ROTrace_{1}$. Next, we consider the queries in $\ROTrace_{2}$, performed after the adversary has chosen the message $\CMMessage$. Conditioned on the query $(\CMMessage,\CMSaltString)$ not appearing in $\ROTrace_{1}$, the probability that any of the queries in $\ROTrace_{2}$ is $(\CMMessage,\CMSaltString)$ equals the same probability but when sampling $\CMSaltString$ \emph{after} the adversary performs the queries in $\ROTrace_{2}$. Formally, we apply \Cref{lemma:rom-ow-high-entropy} with respect to $\ROFunction'(\CMSaltString) \DefineEqual \ROFunction(\CMMessage,\CMSaltString)$, and deduce that the probability that $(\CMMessage,\CMSaltString)$ is a query in $\ROTrace_{2}$ is at most $\frac{\Cardinality{\ROTrace_{2}}}{2^{\CMSaltSize}} \leq \frac{\ROQueryBound_{2}}{2^{\CMSaltSize}}$. Together, we conclude that
+\begin{align*}
+\Pr[\Event]
+\leq
+\frac{\ROQueryBound_{1}}{2^{\CMSaltSize}} + \frac{\ROQueryBound_{2}}{2^{\CMSaltSize}}
+= \frac{\ROQueryBound}{2^{\CMSaltSize}}
+\enspace.
+\end{align*}
+\end{proof}
+\end{proof}
+
+\parhead{The case of $\ROQueryBound=\infty$}
+If the distinguisher may query the random oracle an unbounded number of times then it can use strategies that are quite different from the bounded case. In particular, the distinguisher may query the random oracle $\ROFunction$ at every input, and use the information to attempt to learn $\CMMessage$. For example, for some $\ROFunction$, it is the case that $\Pr_{\CMSaltString}\left[\CMMessage = 1 \ConditionedOn \ROFunction(\CMMessage \concat \CMSaltString) = \CMCommitment\right] \gg \Pr_{\CMSaltString}\left[\CMMessage = 0 \ConditionedOn \ROFunction(\CMMessage \concat \CMSaltString) = \CMCommitment\right]$ for $\CMCommitment = \ROFunction(\CMMessage \concat \CMSaltString)$, in which case $\CMAdversary$ can determine $\CMMessage$ from $\CMCommitment$ with good accuracy. Nevertheless, we expect that most random oracles are \DoQuote{well-behaved}: for every image $\CMCommitment \in \Bits^{\ROOutputSize}$ and any two messages $\CMMessage,\CMMessage'$ the number of pre-images of the form $(\CMMessage,\CMSaltString)$ is roughly the same as the number of pre-images of the form $(\CMMessage',\CMSaltString)$. In such a case, it remains (statistically) hard to distinguish if the message is $\CMMessage$ or $\CMMessage'$ (or even $\CMCommitment$ is simply random).
+
+Informally, the error is a sum of two terms: $2^{-2\ROOutputSize \CMMessageLength \CMSaltSize} +
+2 \sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize - \ROOutputSize}{2}} = O(\sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize - \ROOutputSize}{2}})$. The first term comes from the probability that a random oracle is not well-behaved. The second term (which is the dominant one) is the statistical distance of a random variable of the form $\ROFunction(\CMMessage \concat \CMSaltString)$ from a random string in $\Bits^{\ROOutputSize}$, for a fixed well-behaved $\ROFunction$ and over a random choice of $\CMSaltString$. In \Cref{claim:cm-tightness-of-unbounded-case} further below we prove that the bound is essentially tight.
+
+\begin{proof}[Proof for $\ROQueryBound=\infty$]
+The adversary is unbounded, and so its final output is a deterministic function of the random oracle $\ROFunction$ (in its entirety) and the commitment $\CMCommitment$. In one experiment $\CMCommitment$ is computed as $\ROFunction(\CMMessage,\CMSaltString)$ and in the other experiment it is computed as $\CMSimulator^{\ROFunction}$. By \Cref{claim:function-and-statistical-distance}, the statistical distance between the adversary's final output in the two experiments is at most the statistical distance between the following two random variables:
+\begin{align*}
+\Big(
+\ROFunction,
+\ROFunction(\CMMessage,\CMSaltString)
+\Big)
+\;\; \text{and} \;\;
+\Big(
+\ROFunction,
+\CMSimulator^{\ROFunction}
+\Big)
+\enspace.
+\end{align*}
+The simulator $\CMSimulator$ outputs a random string in $\Bits^{\ROOutputSize}$.
+
+For every $\CMMessage \in \Bits^{\CMMessageLength}$, $\CMCommitment \in \Bits^{\ROOutputSize}$, and $\CMSaltString \in \Bits^{\CMSaltSize}$, define $\RandomVariableZ_{\CMMessage,\CMCommitment,\CMSaltString}$ to be the indicator random variable (over the choice of $\ROFunction$) that denotes the event that $\ROFunction(\CMMessage,\CMSaltString) = \CMCommitment$. Note that $(\RandomVariableZ_{\CMMessage,\CMCommitment,\CMSaltString})_{\CMSaltString \in \Bits^{\CMSaltSize}}$ are independent random variables, and that $\Pr[\RandomVariableZ_{\CMMessage,\CMCommitment,\CMSaltString}=1]=2^{-\ROOutputSize}$ for every $\CMSaltString \in \Bits^{\CMSaltSize}$.
+
+For every $\CMMessage \in \Bits^{\CMMessageLength}$ and $\CMCommitment \in \Bits^{\ROOutputSize}$, define $\RandomVariableZ_{\CMMessage,\CMCommitment}$ to be the random variable (over the choice of $\ROFunction$) that counts the number of salts that map the message $\CMMessage$ to the commitment $\CMCommitment$:
+\begin{equation*}
+\RandomVariableZ_{\CMMessage,\CMCommitment}
+\DefineEqual
+\sum_{\CMSaltString \in \Bits^{\CMSaltSize}} \RandomVariableZ_{\CMMessage,\CMCommitment,\CMSaltString}
+\enspace.
+\end{equation*}
+Note that $\Expectation[\RandomVariableZ_{\CMMessage,\CMCommitment}] = \sum_{\CMSaltString \in \Bits^{\CMSaltSize}} \Expectation[\RandomVariableZ_{\CMMessage,\CMCommitment,\CMSaltString}] = 2^{\CMSaltSize-\ROOutputSize}$. By a Chernoff bound (\Cref{lemma:chernoff-bound}),
+\begin{align*}
+\Pr_{\ROFunction}\Big[
+\AbsValue{
+\RandomVariableZ_{\CMMessage,\CMCommitment}
+-
+\Expectation[\RandomVariableZ_{\CMMessage,\CMCommitment}]
+}
+\geq
+\delta \cdot \Expectation[\RandomVariableZ_{\CMMessage,\CMCommitment}]
+\Big]
+\leq 2e^{-\frac{\Expectation[\RandomVariableZ_{\CMMessage,\CMCommitment}] \delta^2}{3}}
+\enspace.
+\end{align*}
+Setting $\delta \DefineEqual 4\sqrt{\frac{\ROOutputSize \CMMessageLength \CMSaltSize}{\Expectation[\RandomVariableZ_{\CMMessage,\CMCommitment}]}} = 4\sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize-\ROOutputSize}{2}}$, we get
+\begin{align*}
+\Pr_{\ROFunction}\left[
+\AbsValue{
+\RandomVariableZ_{\CMMessage,\CMCommitment}
+-
+2^{\CMSaltSize-\ROOutputSize}
+}
+\geq
+4\sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{\frac{\CMSaltSize-\ROOutputSize}{2}}
+\right]
+\leq 2e^{-\frac{16\ROOutputSize \CMMessageLength \CMSaltSize}{3}}
+\leq e^{-4\ROOutputSize \CMMessageLength \CMSaltSize}
+\enspace.
+\end{align*}
+Taking a union bound over all $\CMCommitment \in \Bits^{\ROOutputSize}$, and dividing by $2^{\CMSaltSize}$ we deduce that
+\begin{align}
+\label{eq:hiding-good-event}
+\Pr_{\ROFunction}\left[
+\exists\,\CMCommitment \in \Bits^{\ROOutputSize}
+:
+\AbsValue{
+\frac{\RandomVariableZ_{\CMMessage,\CMCommitment}}{2^{\CMSaltSize}}
+-
+\frac{1}{2^{\ROOutputSize}}
+}
+\geq 4\sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize +  \ROOutputSize}{2}}
+\right]
+\leq 2^{\ROOutputSize} \cdot e^{-4\ROOutputSize \CMMessageLength \CMSaltSize}
+\enspace.
+\end{align}
+
+Let $U_{\ROOutputSize}$ be the uniform distribution over $\Bits^{\ROOutputSize}$; also, for a given $\ROFunction$, let $D_{\CMMessage}(\ROFunction)$ be the distribution $\ROFunction(\CMMessage,\CMSaltString)$ for a uniform random salt $\CMSaltString \in \Bits^{\CMSaltSize}$. For every $\ROFunction$ such that the event in \Cref{eq:hiding-good-event} does not hold (namely, for every $\CMCommitment \in \Bits^{\ROOutputSize}$ it holds that $\AbsValue{\frac{\RandomVariableZ_{\CMMessage,\CMCommitment}}{2^{\CMSaltSize}} - \frac{1}{2^{\ROOutputSize}}} < 4\sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize +  \ROOutputSize}{2}}$), we have that
+\begin{align*}
+& \Delta(D_{\CMMessage}(\ROFunction),U_{\ROOutputSize}) \\
+& = \frac{1}{2} \cdot \sum_{\CMCommitment \in \Bits^{\ROOutputSize}} \AbsValue{\frac{\RandomVariableZ_{\CMMessage,\CMCommitment}(\ROFunction)}{2^{\CMSaltSize}} - \frac{1}{2^{\ROOutputSize}}} \\
+& < \frac{1}{2} \cdot \sum_{\CMCommitment \in \Bits^{\ROOutputSize}} 4\sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize +  \ROOutputSize}{2}} \\
+& = 2 \cdot 2^{\ROOutputSize} \cdot \sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize +  \ROOutputSize}{2}} \\
+& = 2 \sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize - \ROOutputSize}{2}}
+\enspace.
+\end{align*}
+Taking a union bound over all $\CMMessage \in \Bits^{\CMMessageLength}$, we deduce that
+\begin{align*}
+\Pr_{\ROFunction}
+\left[\exists\,\CMMessage \in \Bits^{\CMMessageLength} : \StatisticalDistance{D_{\CMMessage}(\ROFunction)}{U_{\ROOutputSize}} \geq 2 \sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize - \ROOutputSize}{2}}
+\right]
+\leq 2^{\CMMessageLength} \cdot 2^{\ROOutputSize} \cdot e^{-4\ROOutputSize \CMMessageLength \CMSaltSize}
+\leq 2^{-2\ROOutputSize \CMMessageLength \CMSaltSize}
+\enspace.
+\end{align*}
+Using \Cref{claim:statistical-distance-for-derived-variables} we conclude that the statistical distance is
+\begin{equation*}
+\StatisticalDistance{(\ROFunction,D_{\CMMessage}(\ROFunction))}{(\ROFunction,U_{\ROOutputSize})}
+\leq
+2^{-2\ROOutputSize \CMMessageLength \CMSaltSize} +
+2 \sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize - \ROOutputSize}{2}}
+\leq
+3 \sqrt{\ROOutputSize \CMMessageLength \CMSaltSize} \cdot 2^{-\frac{\CMSaltSize - \ROOutputSize}{2}}
+\enspace.
+\end{equation*}
+\end{proof}
+
+\begin{claim}
+\label{claim:cm-tightness-of-unbounded-case}
+Let $\CMSymbol \DefineEqual \CMConstructor{\ROOutputSize}{\CMMessageLength}{\CMSaltSize}$. For every message $\CMMessage \in \Bits^{\CMMessageLength}$ there exists an unbounded adversary $\CMAdversary$ for which the following two distributions are $\Omega(2^{-\frac{\CMSaltSize-\ROOutputSize}{2}})$-far in statistical distance:
+\begin{equation*}
+\left\{
+\CMAdversary^{\ROFunction}(\CMCommitment)
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  (\CMCommitment,\CMSaltString) \gets \CMCommit^{\ROFunction}(\CMMessage)
+}
+\right\}
+\TextAndInMath
+\left\{
+\CMAdversary^{\ROFunction}(\CMCommitment)
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  \CMCommitment \gets \CMSimulator^{\ROFunction}
+}
+\right\}
+\enspace.
+\end{equation*}
+\end{claim}
+
+\begin{proof}
+The adversary $\CMAdversary$ performs the following $2^{\CMSaltSize}$-query attack: compute $\Pr_{\CMSaltString}[\ROFunction(\CMMessage,\CMSaltString) = \CMCommitment]$ and output $1$ if and only if this probability is at least $\alpha \DefineEqual 2^{-\ROOutputSize} + \frac{1}{4} \cdot 2^{\frac{-\CMSaltSize - \ROOutputSize-1}{2}}$.
+
+Fix a random oracle $\ROFunction$. For every $\ROAnswer \in \Bits^{\ROOutputSize}$, define $S_{\ROFunction,\ROAnswer} \DefineEqual \{ \CMSaltString \in \Bits^{\CMSaltSize} : \ROFunction(\CMMessage,\CMSaltString) = \ROAnswer \}$. Define $\RandomVariableX_{\ROFunction,\ROAnswer}$ to be $1$ if $\Pr_{\CMSaltString}[\CMSaltString \in S_{\ROFunction,\ROAnswer}] \geq \alpha$, and $0$ otherwise. Define $\RandomVariableX_{\ROFunction} \DefineEqual \sum_{\ROAnswer \in \Bits^{\ROOutputSize}}\RandomVariableX_{\ROFunction,\ROAnswer}$.
+
+For every $\ROFunction \in \RODistribution{\ROOutputSize}$, the probability that $\CMAdversary$ outputs $1$ equals the probability that the random salt $\CMSaltString$ is such that $\RandomVariableX_{\ROFunction,\ROFunction(\CMMessage,\CMSaltString)}=1$. Hence
+\begin{align*}
+& \Pr\left[
+\CMAdversary^{\ROFunction}(\CMCommitment) = 1
+\GivenExperiment
+\StateExperiment{
+  (\CMCommitment,\CMSaltString) \gets \CMCommit^{\ROFunction}(\CMMessage)
+}
+\right] \\
+&=
+\Pr\left[
+\CMAdversary^{\ROFunction}(\CMCommitment) = 1
+\GivenExperiment
+\StateExperiment{
+  \CMSaltString \gets \Bits^{\CMSaltSize} \\
+  \CMCommitment \gets \ROFunction(\CMMessage,\CMSaltString)
+}
+\right]
+\\ & =
+\sum_{\ROAnswer \in \Bits^{\ROOutputSize}}\Pr_{\CMSaltString}[\CMSaltString \in S_{\ROFunction,\ROAnswer}] \cdot \RandomVariableX_{\ROFunction,\ROAnswer} \\
+&\geq
+\sum_{\ROAnswer \in \Bits^{\ROOutputSize}} \alpha \cdot \RandomVariableX_{\ROFunction,\ROAnswer}
+=
+\alpha \cdot \RandomVariableX_{\ROFunction}
+\enspace.
+\end{align*}
+Averaging over all $\ROFunction$ we get that
+\begin{align*}
+&\Pr\left[
+\CMAdversary^{\ROFunction}(\CMCommitment) = 1
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  (\CMCommitment,\CMSaltString) \gets \CMCommit^{\ROFunction}(\CMMessage)
+}
+\right]
+\\&=
+\Pr\left[
+\CMAdversary^{\ROFunction}(\CMCommitment) = 1
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  \CMSaltString \gets \Bits^{\CMSaltSize} \\
+  \CMCommitment \gets \ROFunction(\CMMessage,\CMSaltString)
+}
+\right]
+\geq
+\alpha \cdot \Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}]
+\enspace.
+\end{align*}
+On the other hand,
+\begin{align*}
+&\Pr\left[
+\CMAdversary^{\ROFunction}(\CMCommitment) = 1
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  \CMCommitment \gets \CMSimulator^{\ROFunction}
+}
+\right]
+\\&= \Pr\left[
+\CMAdversary^{\ROFunction}(\CMCommitment) = 1
+\GivenExperiment
+\StateExperiment{
+  \ROFunction \gets \RODistribution{\ROOutputSize} \\
+  \CMCommitment \gets \Bits^{\ROOutputSize}
+}
+\right]
+= 2^{-\ROOutputSize} \cdot \Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}]
+\enspace.
+\end{align*}
+Thus, the statistical distance $\delta$ is at least
+\begin{equation*}
+\delta
+\geq \alpha \cdot \Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}] - 2^{-\ROOutputSize} \cdot \Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}]
+= \Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}] \cdot (\alpha - 2^{-\ROOutputSize})
+= \Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}] \cdot \frac{1}{4} \cdot 2^{\frac{-\CMSaltSize - \ROOutputSize-1}{2}}
+\enspace.
+\end{equation*}
+We lower bound $\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}]$ in the following claim.
+
+\begin{claim}
+$\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}] = \Omega(2^{\ROOutputSize})$
+\end{claim}
+
+\begin{proof}
+We lower bound $\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction,\ROAnswer}]$ for every $\ROAnswer \in \Bits^{\ROOutputSize}$. The expectation  $\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction,\ROAnswer}]$ equals the probability that a binomial distribution with $2^{\CMSaltSize}$ experiments and success probability $2^{-\ROOutputSize}$ is at least $2^{\CMSaltSize} \cdot \alpha$. Denoting the binomial probability with $\mathsf{Bin}$, we have that $\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction,\ROAnswer}] = \Pr[\mathsf{Bin}(2^{\CMSaltSize},2^{-\ROOutputSize}) \geq 2^{\CMSaltSize} \cdot \alpha]$. The binomial distribution can be approximated (up to constant factor) by a normal distribution (denoted by $\mathsf{N}$) as follows: for any $x$, $\Pr[\mathsf{Bin}(n,p) \geq x]  = \Omega(\Pr[\mathsf{N}(np,np(1-p)) \geq x])$. Thus, there is a constant $c > 0$ such that
+\begin{align*}
+\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction,\ROAnswer}]
+& = \Pr[\mathsf{Bin}(2^{\CMSaltSize},2^{-\ROOutputSize}) \geq 2^{\CMSaltSize} \cdot \alpha]
+\\ & \geq
+c \cdot \Pr[\mathsf{N}(2^{\CMSaltSize-\ROOutputSize},2^{\CMSaltSize-\ROOutputSize}(1-2^{-\ROOutputSize})) \geq 2^{\CMSaltSize} \cdot \alpha]
+\\ & \geq
+c \cdot \Pr[\mathsf{N}(2^{\CMSaltSize-\ROOutputSize}, 2^{\CMSaltSize-\ROOutputSize-1}) \geq 2^{\CMSaltSize} \cdot \alpha]
+\\ & =
+c \cdot \Pr[\mathsf{N}(0, 2^{\CMSaltSize-\ROOutputSize-1}) \geq 2^{\CMSaltSize} \cdot \alpha - 2^{\CMSaltSize-\ROOutputSize}]
+\\ & =
+c \cdot \Pr\left[\mathsf{N}(0,1) \geq \frac{\alpha - 2^{-\ROOutputSize}}{2^{\frac{-\CMSaltSize-\ROOutputSize-1}{2}}}\right]
+\EquationComment{recall that $b \cdot \mathsf{N}(0,\sigma^2) =  \mathsf{N}(0,b^2 \cdot \sigma^2)$.}
+\\ & =
+c \cdot \Pr\left[\mathsf{N}(0,1) \geq \frac{1}{4}\right]
+= \Omega\left(1\right)
+\enspace.
+\end{align*}
+Then, by linearity of expectation, we get that $\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}] \geq \Omega(2^{\ROOutputSize})$.
+\end{proof}
+Plugging this in the lower bound for $\delta$ we get that
+\begin{align*}
+\delta \geq
+\Expectation_{\ROFunction}[\RandomVariableX_{\ROFunction}] \cdot \frac{1}{4} \cdot 2^{\frac{-\CMSaltSize - \ROOutputSize-1}{2}}
+ =
+\Omega\left(2^{\ROOutputSize} \cdot \frac{1}{4} \cdot 2^{\frac{-\CMSaltSize - \ROOutputSize-1}{2}}\right)
+ =
+\Omega \left(2^{-\frac{\CMSaltSize-\ROOutputSize}{2}} \right)
+\enspace.
+\end{align*}
+\end{proof}
