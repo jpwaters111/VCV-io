@@ -736,13 +736,225 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
   -- marginals — the same core ROM property used in `probEvent_pair_collision_le`
   -- for logs but adapted to the cache's function representation.
   --
-  -- TODO: formalize via either:
-  --   (a) an `evalDist`-level coupling between cachingOracle and loggingOracle
-  --       (using `evalDist_simulateQ_run_eq_of_impl_evalDist_eq` to relate their
-  --       joint distributions), or
-  --   (b) a direct inductive argument on `OracleComp` showing that `CacheHasCollision`
-  --       probability satisfies the same recurrence as the log collision probability.
-  sorry
+  -- Proof by induction on `oa`, with a generalized cache-size bound.
+  -- CacheBounded k cache := at most k domain values have cache entries.
+  -- This allows tracking the implicit cache size through the induction
+  -- without requiring Fintype spec.Domain.
+  let C := (Fintype.card (spec.Range default) : ℝ≥0∞)
+  let CacheBounded (k : ℕ) (cache : QueryCache spec) : Prop :=
+    ∃ S : Finset spec.Domain, S.card ≤ k ∧ ∀ t, cache t ≠ none → t ∈ S
+  suffices gen : ∀ (β : Type) (ob : OracleComp spec β) (m k : ℕ),
+      IsTotalQueryBound ob m →
+      ∀ cache₀ : QueryCache spec,
+      ¬CacheHasCollision cache₀ →
+      CacheBounded k cache₀ →
+      Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle ob).run cache₀] ≤
+        ∑ j ∈ range m, ((k + j : ℕ) : ℝ≥0∞) * C⁻¹ by
+    -- Instantiate with cache₀ = ∅, k = 0
+    have h0 : ¬CacheHasCollision (∅ : QueryCache spec) := by
+      intro ⟨t₁, _, _, _, _, h1, _, _⟩; simp at h1
+    have hbnd : CacheBounded 0 (∅ : QueryCache spec) :=
+      ⟨∅, by simp, fun t ht => absurd (by simp : (∅ : QueryCache spec) t = none) ht⟩
+    calc Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅]
+        ≤ ∑ j ∈ range n, ((0 + j : ℕ) : ℝ≥0∞) * C⁻¹ := gen α oa n 0 _hbound ∅ h0 hbnd
+      _ = ∑ j ∈ range n, (j : ℝ≥0∞) * C⁻¹ := by simp
+      _ ≤ (n ^ 2 : ℝ≥0∞) / (2 * C) := gauss_sum_inv_le n C (by positivity)
+  -- Main induction
+  intro β ob
+  induction ob using OracleComp.inductionOn with
+  | pure x =>
+    intro m k _ cache₀ hnocoll _
+    -- simulateQ on pure returns (x, cache₀) unchanged. CacheHasCollision cache₀ is False.
+    have : Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle (pure x)).run cache₀] = 0 := by
+      rw [simulateQ_pure]
+      refine probEvent_eq_zero fun z hz h => ?_
+      simp [StateT.run] at hz
+      obtain ⟨rfl, rfl⟩ := hz
+      exact hnocoll h
+    rw [this]; exact zero_le _
+  | query_bind t mx ih =>
+    intro m k hm cache₀ hnocoll hbnd
+    rw [isTotalQueryBound_query_bind_iff] at hm
+    obtain ⟨hpos, hrest⟩ := hm
+    -- Decompose: simulateQ on query_bind unfolds via cachingOracle
+    -- Case split on whether t is already cached
+    by_cases ht : ∃ v, cache₀ t = some v
+    · -- Cache hit: cache unchanged, run mx v with same cache
+      obtain ⟨v, hv⟩ := ht
+      -- The computation simplifies to (simulateQ cachingOracle (mx v)).run cache₀
+      have hrun : (simulateQ cachingOracle (liftM (query t) >>= mx)).run cache₀ =
+          (simulateQ cachingOracle (mx v)).run cache₀ := by
+        simp only [simulateQ_query_bind, OracleQuery.input_query, StateT.run_bind]
+        -- Goal: (liftM (cachingOracle t)).run cache₀ >>= ... = ...
+        -- cachingOracle t at cache₀ with cache₀ t = some v returns (v, cache₀)
+        have hcache : (liftM (cachingOracle t) : StateT _ (OracleComp spec) _).run cache₀ =
+            pure (v, cache₀) := by
+          simp [liftM, MonadLiftT.monadLift, MonadLift.monadLift,
+            StateT.run_bind, StateT.run_get, hv, pure_bind, StateT.run_pure]
+        rw [hcache, pure_bind]
+        simp [OracleQuery.cont_query]
+      rw [hrun]
+      -- Apply IH: mx v has bound m - 1, cache₀ has ≤ k entries
+      calc Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle (mx v)).run cache₀]
+          ≤ ∑ j ∈ range (m - 1), ((k + j : ℕ) : ℝ≥0∞) * C⁻¹ :=
+            ih v (m - 1) k (hrest v) cache₀ hnocoll hbnd
+        _ ≤ ∑ j ∈ range m, ((k + j : ℕ) : ℝ≥0∞) * C⁻¹ := by
+            apply Finset.sum_le_sum_of_subset
+            exact Finset.range_mono (Nat.sub_le m 1)
+    · -- Cache miss: cache₀ t = none
+      push_neg at ht
+      have ht_none : cache₀ t = none := by
+        cases h : cache₀ t with | none => rfl | some v => exact absurd h (ht v)
+      -- The computation becomes: query t >>= fun u => (sim cachingOracle (mx u)).run (cache₀.cacheQuery t u)
+      -- We prove this by showing the unfolded cachingOracle at a miss is a query + cacheQuery.
+      have hrun : (simulateQ cachingOracle (liftM (query t) >>= mx)).run cache₀ =
+          (liftM (query t) >>= fun u =>
+            (simulateQ cachingOracle (mx u)).run (cache₀.cacheQuery t u)) := by
+        simp only [simulateQ_query_bind, OracleQuery.input_query, StateT.run_bind]
+        -- Show the oracle step unfolds to query + cacheQuery
+        have hstep : (liftM (cachingOracle t) : StateT _ (OracleComp spec) _).run cache₀ =
+            (liftM (query t) >>= fun u =>
+              pure (u, cache₀.cacheQuery t u) : OracleComp spec _) := by
+          simp only [cachingOracle.apply_eq, liftM, MonadLiftT.monadLift, MonadLift.monadLift,
+            StateT.run_bind, StateT.run_get, pure_bind, ht_none]
+          -- Goal involves StateT.lift ... cache₀
+          show (StateT.lift (PFunctor.FreeM.lift (query t)) cache₀ >>= _) = _
+          simp only [StateT.lift, bind_assoc, pure_bind,
+            modifyGet, MonadState.modifyGet, MonadStateOf.modifyGet,
+            StateT.modifyGet, StateT.run]
+        rw [hstep, bind_assoc]; simp [pure_bind]
+      rw [hrun]
+      -- Apply probEvent_bind_le_add to decompose:
+      -- ε₁ = Pr[CacheHasCollision (cache₀.cacheQuery t u) | u ← query t] ≤ k * C⁻¹
+      -- ε₂ = Pr[CacheHasCollision final | continuation, given no collision] by IH
+      have hε₁ : Pr[fun u => CacheHasCollision (cache₀.cacheQuery t u) |
+          (liftM (query t) : OracleComp spec _)] ≤ (k : ℝ≥0∞) * C⁻¹ := by
+        open Classical in
+        rw [show (liftM (query t) : OracleComp spec _) = (query t : OracleComp spec _) from rfl,
+            probEvent_query]
+        -- Goal: ↑|{u | CacheHasCollision (cache₀.cacheQuery t u)}| / ↑|Range t| ≤ k * C⁻¹
+        -- Bound the bad set cardinality by k
+        suffices hbad_le_k : (Finset.univ.filter
+            (fun u => CacheHasCollision (cache₀.cacheQuery t u))).card ≤ k by
+          calc (↑(Finset.univ.filter (fun u => CacheHasCollision (cache₀.cacheQuery t u))).card
+                  : ℝ≥0∞) / ↑(Fintype.card (spec.Range t))
+              ≤ (k : ℝ≥0∞) / ↑(Fintype.card (spec.Range t)) := by
+                apply ENNReal.div_le_div_right
+                exact_mod_cast hbad_le_k
+            _ ≤ (k : ℝ≥0∞) / C := by
+                gcongr
+                change (Fintype.card (spec.Range default) : ℝ≥0∞) ≤ ↑(Fintype.card (spec.Range t))
+                exact_mod_cast (_hrange t)
+            _ = (k : ℝ≥0∞) * C⁻¹ := by rw [ENNReal.div_eq_inv_mul, mul_comm]
+        obtain ⟨S, hScard, hSmem⟩ := hbnd
+        -- Any collision in cache₀.cacheQuery t u must involve t
+        -- (since ¬CacheHasCollision cache₀)
+        have hmust : ∀ u, CacheHasCollision (cache₀.cacheQuery t u) →
+            ∃ t' : spec.Domain, t' ≠ t ∧
+              ∃ v : spec.Range t', cache₀ t' = some v ∧ HEq u v := by
+          intro u ⟨t₁, t₂, u₁, u₂, hne, h1, h2, hequ⟩
+          by_cases ht1 : t₁ = t
+          · subst ht1
+            refine ⟨t₂, hne.symm, u₂, ?_, ?_⟩
+            · rwa [QueryCache.cacheQuery_of_ne _ _ hne.symm] at h2
+            · simp [QueryCache.cacheQuery_self] at h1; subst h1; exact hequ
+          · by_cases ht2 : t₂ = t
+            · subst ht2
+              refine ⟨t₁, hne, u₁, ?_, ?_⟩
+              · rwa [QueryCache.cacheQuery_of_ne _ _ ht1] at h1
+              · simp [QueryCache.cacheQuery_self] at h2; subst h2; exact hequ.symm
+            · exfalso; apply hnocoll
+              exact ⟨t₁, t₂, u₁, u₂, hne,
+                by rwa [QueryCache.cacheQuery_of_ne _ _ ht1] at h1,
+                by rwa [QueryCache.cacheQuery_of_ne _ _ ht2] at h2, hequ⟩
+        -- Define witness function: for each bad u, pick t' with cache₀ t' = some v, HEq u v
+        let f : spec.Range t → spec.Domain := fun u =>
+          if h : CacheHasCollision (cache₀.cacheQuery t u)
+          then (hmust u h).choose
+          else default
+        -- f maps bad set into S
+        have hf_maps : ∀ u ∈ Finset.univ.filter
+            (fun u => CacheHasCollision (cache₀.cacheQuery t u)),
+            f u ∈ S := by
+          intro u hu
+          simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hu
+          show (if h : CacheHasCollision (cache₀.cacheQuery t u)
+            then (hmust u h).choose else default) ∈ S
+          rw [dif_pos hu]
+          obtain ⟨_, v, hcache, _⟩ := (hmust u hu).choose_spec
+          exact hSmem _ (by rw [hcache]; exact Option.some_ne_none v)
+        -- f is injective on bad set
+        have hf_inj : Set.InjOn f
+            (Finset.univ.filter (fun u => CacheHasCollision (cache₀.cacheQuery t u))) := by
+          intro u₁ hu₁ u₂ hu₂ hfeq
+          have hu₁' := (Finset.mem_filter.mp hu₁).2
+          have hu₂' := (Finset.mem_filter.mp hu₂).2
+          -- Unfold f in hfeq
+          change (if h : CacheHasCollision _ then (hmust u₁ h).choose else default) =
+            (if h : CacheHasCollision _ then (hmust u₂ h).choose else default) at hfeq
+          rw [dif_pos hu₁', dif_pos hu₂'] at hfeq
+          -- Both u₁, u₂ are HEq to the cache value at the same index
+          obtain ⟨_, v₁, hcache₁, heq₁⟩ := (hmust u₁ hu₁').choose_spec
+          obtain ⟨_, v₂, hcache₂, heq₂⟩ := (hmust u₂ hu₂').choose_spec
+          -- Prove via an auxiliary lemma that avoids dependent rewriting
+          -- Key: if cache₀ t₁' = some v₁ and cache₀ t₂' = some v₂ and t₁' = t₂'
+          -- then HEq v₁ v₂ (since cache₀ is a dependent function)
+          suffices aux : ∀ (a b : spec.Domain) (va : spec.Range a) (vb : spec.Range b),
+              cache₀ a = some va → cache₀ b = some vb → a = b → HEq va vb by
+            exact eq_of_heq (heq₁.trans ((aux _ _ _ _ hcache₁ hcache₂ hfeq).trans heq₂.symm))
+          intro a b va vb ha hb hab
+          subst hab; rw [ha] at hb; exact heq_of_eq (Option.some.inj hb)
+        calc (Finset.univ.filter (fun u => CacheHasCollision (cache₀.cacheQuery t u))).card
+            ≤ S.card := Finset.card_le_card_of_injOn f hf_maps hf_inj
+          _ ≤ k := hScard
+      have hε₂ : ∀ u ∈ support (liftM (query t) : OracleComp spec _),
+          ¬CacheHasCollision (cache₀.cacheQuery t u) →
+          Pr[fun z => CacheHasCollision z.2 |
+            (simulateQ cachingOracle (mx u)).run (cache₀.cacheQuery t u)] ≤
+              ∑ j ∈ range (m - 1), ((k + 1 + j : ℕ) : ℝ≥0∞) * C⁻¹ := by
+        intro u _ hnocoll'
+        apply ih u (m - 1) (k + 1) (hrest u) _ hnocoll'
+        -- CacheBounded (k+1) for cache₀.cacheQuery t u
+        obtain ⟨S, hScard, hSmem⟩ := hbnd
+        exact ⟨insert t S,
+          le_trans (Finset.card_insert_le t S) (by omega),
+          fun t' ht' => by
+            by_cases heq : t' = t
+            · exact heq ▸ Finset.mem_insert_self _ S
+            · rw [QueryCache.cacheQuery_of_ne cache₀ _ heq] at ht'
+              exact Finset.mem_insert_of_mem (hSmem t' ht')⟩
+      -- Combine via probEvent_bind_le_add
+      have hcombine := probEvent_bind_le_add
+        (mx := (liftM (query t) : OracleComp spec _))
+        (my := fun u => (simulateQ cachingOracle (mx u)).run (cache₀.cacheQuery t u))
+        (p := fun u => ¬CacheHasCollision (cache₀.cacheQuery t u))
+        (q := fun z => ¬CacheHasCollision z.2)
+        (ε₁ := (k : ℝ≥0∞) * C⁻¹)
+        (ε₂ := ∑ j ∈ range (m - 1), ((k + 1 + j : ℕ) : ℝ≥0∞) * C⁻¹)
+        (by simpa [not_not] using hε₁)
+        (by simpa [not_not] using hε₂)
+      simp only [not_not] at hcombine
+      -- Now show k * C⁻¹ + ∑ j in range (m-1), (k+1+j) * C⁻¹ = ∑ j in range m, (k+j) * C⁻¹
+      calc Pr[fun z => CacheHasCollision z.2 |
+              liftM (query t) >>= fun u =>
+                (simulateQ cachingOracle (mx u)).run (cache₀.cacheQuery t u)]
+          ≤ (k : ℝ≥0∞) * C⁻¹ + ∑ j ∈ range (m - 1), ((k + 1 + j : ℕ) : ℝ≥0∞) * C⁻¹ :=
+            hcombine
+        _ = ∑ j ∈ range m, ((k + j : ℕ) : ℝ≥0∞) * C⁻¹ := by
+            -- k * C⁻¹ + ∑_{j<m-1} (k+1+j) * C⁻¹ = ∑_{j<m} (k+j) * C⁻¹
+            -- RHS = (k+0)*C⁻¹ + ∑_{j<m-1} (k+(j+1))*C⁻¹
+            have hm1 : m = (m - 1) + 1 := by omega
+            conv_rhs => rw [hm1]
+            rw [Finset.sum_range_succ' (fun j => ((k + j : ℕ) : ℝ≥0∞) * C⁻¹)]
+            simp only [Nat.add_zero]
+            -- LHS: k*C⁻¹ + ∑_{j<m-1} (k+1+j)*C⁻¹
+            -- RHS: k*C⁻¹ + ∑_{j<m-1} (k+(j+1))*C⁻¹
+            -- Equal since k+1+j = k+(j+1) in ℕ
+            have hsums : ∀ j ∈ range (m - 1),
+                ((k + 1 + j : ℕ) : ℝ≥0∞) * C⁻¹ = ((k + (j + 1) : ℕ) : ℝ≥0∞) * C⁻¹ :=
+              fun j _ => by congr 1; push_cast; ring
+            rw [Finset.sum_congr rfl hsums, add_comm]
+
 
 /-! ## Per-Index Bound Versions -/
 
