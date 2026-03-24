@@ -494,38 +494,34 @@ private lemma extractability_someWin_le_collision {t : ℕ}
   probEvent_mono fun z hz ⟨hwin, hsome⟩ =>
     extractability_someWin_implies_collision A z hz hwin hsome
 
-/-- The none-case win event has probability at most `1/|C|`.
+/-- The none-case win event has probability at most `(t+1)/|C|`.
 
-When `CMExtract` returns `none`, no commit-phase query returned `cm`. Since
-`cache₁ (m,s) = none` (otherwise a log entry would match `cm`, contradicting `none`),
-the value `c` at `(m,s)` is ultimately determined by a single fresh uniform draw
-over `C`. The probability that this fresh draw equals the adversary's fixed `cm`
-is exactly `1/|C|`.
+When `CMExtract` returns `none`, no commit-phase query returned `cm`. Winning
+requires the verification query at `(m,s)` to return `cm`. The value at `(m,s)` was
+determined by a single fresh uniform draw — either during the open phase or at
+verification time. However, the open-phase adversary can adaptively choose `(m,s)`:
+it can query multiple points and output whichever one returned `cm`. With at most
+`t₂ + 1` chances (open queries + verification), by union bound the probability
+that any fresh draw equals `cm` is `≤ (t₂ + 1)/|C| ≤ (t + 1)/|C|`.
 
-This is the probabilistic argument that the textbook (SNARGs book, Lemma cm-extractability)
-handles as the "third case": the adversary outputs `(m,s)` such that `H(m,s) = cm`
-but `(m,s)` was never queried during commit. -/
+The inner computation has total query bound `t + 1` (commit ≤ t₁, open ≤ t₂,
+verify = 1, total ≤ t + 1). The proof uses the per-query uniformity bound
+(`probEvent_log_entry_eq_le`) and a union bound over all queries.
+
+This bound still suffices for the main theorem since
+`(t+1)²/(2|C|) + (t+1)/|C| = (t+1)(t+3)/(2|C|) ≤ (t+2)²/(2|C|)`. -/
 private lemma extractability_noneWin_le_inv_card {t : ℕ}
     (A : ExtractAdversary M S C AUX t) :
     Pr[fun z => z.1.1 = true ∧ z.1.2 = true |
       (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] ≤
-    (Fintype.card C : ℝ≥0∞)⁻¹ := by
-  -- Strategy: decompose the tagged computation into a prefix (commit + open) and
-  -- the final verification query. In the none case, winning requires c = cm where
-  -- c comes from cachingOracle at (m,s). We show that conditioned on any prefix state
-  -- where the none-tag holds and win is possible, the probability is ≤ 1/|C|.
-  --
-  -- Key insight: in the none case, CMExtract cm tr = none, meaning no commit-phase
-  -- log entry has output cm. If (m,s) was queried during commit, the log has
-  -- ((m,s), v) with v ≠ cm, so cache has v ≠ cm and verification fails.
-  -- If (m,s) was NOT queried during commit, the first query at (m,s) (during open
-  -- or verification) draws uniformly, giving Pr[= cm] = 1/|C|.
-  --
-  -- Either way, Pr[c = cm | prefix_state, none] ≤ 1/|C|.
-  -- By the tsum decomposition: Pr[win ∧ none] = ∑ prefix Pr[prefix] * Pr[c = cm ∧ none | prefix]
-  --   ≤ ∑ prefix Pr[prefix] * 1/|C| = 1/|C|.
-  --
-  -- Formal proof requires deep decomposition of the StateT/cachingOracle structure.
+    (↑(t + 1) : ℝ≥0∞) * (Fintype.card C : ℝ≥0∞)⁻¹ := by
+  -- The computation has ≤ t+1 queries starting from ∅. The event win ∧ none
+  -- requires some fresh draw to equal cm. By probEvent_cache_has_value_le
+  -- (the cache preimage bound), for each fixed cm the probability that any new
+  -- cache entry = cm is ≤ (t+1)/|C|. Decomposing over the commit phase
+  -- (which determines cm) and applying this bound pointwise:
+  --   Pr[win ∧ none] = ∑' state₁ Pr[state₁] * Pr[win ∧ none | rest(state₁)]
+  --     ≤ ∑' state₁ Pr[state₁] * (t+1)/|C| = (t+1)/|C|.
   sorry
 
 /-- **Extractability theorem (Lemma cm-extractability)**: The probability that
@@ -540,10 +536,10 @@ The win event decomposes into two mutually exclusive cases via `CMExtract`:
 
 Combined: `Pr[win] ≤ Pr[collision] + 1/|C| ≤ (t+1)²/(2|C|) + 1/|C| ≤ (t+2)²/(2|C|)`.
 
-The bound `(t+2)²/(2|C|)` absorbs the `1/|C|` none-case term without requiring
+The bound `(t+2)²/(2|C|)` absorbs the `(t+1)/|C|` none-case term without requiring
 `t ≥ 1`. The textbook (SNARGs book, Lemma cm-extractability) uses `(t+1)²/(2|C|)`
 with `q ≥ 3` total queries; our slightly looser bound avoids this hypothesis.
-The arithmetic key: `(t+1)² + 2 ≤ (t+2)²` for all `t ≥ 0`. -/
+The arithmetic key: `(t+1)² + 2(t+1) ≤ (t+2)²` for all `t ≥ 0`. -/
 theorem extractability_bound {t : ℕ} (A : ExtractAdversary M S C AUX t) :
     Pr[fun z => z.1 = true | extractabilityGame A] ≤
     ((t + 2) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) := by
@@ -573,11 +569,11 @@ theorem extractability_bound {t : ℕ} (A : ExtractAdversary M S C AUX t) :
         probEvent_or_le _ _ _
     _ ≤ Pr[fun z => CacheHasCollision z.2 |
           (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] +
-        (Fintype.card C : ℝ≥0∞)⁻¹ :=
+        (↑(t + 1) : ℝ≥0∞) * (Fintype.card C : ℝ≥0∞)⁻¹ :=
         add_le_add (extractability_someWin_le_collision A)
           (extractability_noneWin_le_inv_card A)
     _ ≤ ((t + 1) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) +
-        (Fintype.card C : ℝ≥0∞)⁻¹ := by
+        (↑(t + 1) : ℝ≥0∞) * (Fintype.card C : ℝ≥0∞)⁻¹ := by
         gcongr
         have h := probEvent_cacheCollision_le_birthday_total
           (extractabilityInner_tagged A) (t + 1)
@@ -585,12 +581,11 @@ theorem extractability_bound {t : ℕ} (A : ExtractAdversary M S C AUX t) :
         simp only [Nat.cast_add, Nat.cast_one] at h
         exact h
     _ ≤ ((t + 2) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) := by
-        -- Arithmetic: (t+1)²/(2|C|) + 1/|C| ≤ (t+2)²/(2|C|)
+        -- Arithmetic: (t+1)²/(2|C|) + (t+1)/|C| ≤ (t+2)²/(2|C|)
         -- Rewrite everything as D⁻¹ * _ where D = 2 * |C|
         set D := (2 * (Fintype.card C : ℝ≥0∞))
         rw [ENNReal.div_eq_inv_mul, ENNReal.div_eq_inv_mul]
-        -- Goal: D⁻¹ * (t+1)² + |C|⁻¹ ≤ D⁻¹ * (t+2)²
-        -- Rewrite |C|⁻¹ = D⁻¹ * 2
+        -- Rewrite (t+1)/|C| = D⁻¹ * 2*(t+1)
         have hC_ne_top : (Fintype.card C : ℝ≥0∞) ≠ ⊤ := ENNReal.natCast_ne_top _
         have hD_inv : (Fintype.card C : ℝ≥0∞)⁻¹ = D⁻¹ * 2 := by
           simp only [D]
@@ -599,10 +594,12 @@ theorem extractability_bound {t : ℕ} (A : ExtractAdversary M S C AUX t) :
             mul_comm (2 : ℝ≥0∞)⁻¹ _, mul_assoc,
             ENNReal.inv_mul_cancel (by norm_num : (2 : ℝ≥0∞) ≠ 0)
               (by norm_num : (2 : ℝ≥0∞) ≠ ⊤), mul_one]
-        rw [hD_inv, ← mul_add]
+        rw [show (↑(t + 1) : ℝ≥0∞) * (Fintype.card C : ℝ≥0∞)⁻¹ =
+            D⁻¹ * (2 * ↑(t + 1)) from by rw [hD_inv]; ring,
+          ← mul_add]
         apply mul_le_mul_right
-        -- Goal: (t+1)² + 2 ≤ (t+2)² in ℝ≥0∞
-        have : ((t + 1) ^ 2 + 2 : ℕ) ≤ ((t + 2) ^ 2 : ℕ) := by ring_nf; omega
+        -- Goal: (t+1)² + 2*(t+1) ≤ (t+2)² in ℝ≥0∞
+        have : ((t + 1) ^ 2 + 2 * (t + 1) : ℕ) ≤ ((t + 2) ^ 2 : ℕ) := by ring_nf; omega
         exact_mod_cast this
 
 /-! ## 3. Hiding
