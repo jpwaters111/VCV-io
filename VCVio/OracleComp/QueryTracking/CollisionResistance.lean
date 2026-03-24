@@ -710,67 +710,6 @@ theorem probEvent_logCollision_le_birthday_total {α : Type}
         rw [hcard_eq, Finset.sum_mul]
         exact gauss_sum_inv_le n C (by exact_mod_cast hC)
 
-/-- On the support of `cachingOracle.withLogging`, every cache entry appears in the log.
-Starting from initial cache `cache₀`, if the final cache maps `t ↦ some u`
-and `cache₀ t = none`, then `⟨t, u⟩` is in the accumulated log `z.1.2`. -/
-private lemma cache_subset_log_of_withLogging
-    {α : Type} (oa : OracleComp spec α) (cache₀ : QueryCache spec)
-    (z : (α × QueryLog spec) × QueryCache spec)
-    (hz : z ∈ support (((simulateQ cachingOracle.withLogging oa).run).run cache₀))
-    (t : spec.Domain) (u : spec.Range t) (htu : z.2 t = some u)
-    (hnotinit : cache₀ t = none) :
-    ⟨t, u⟩ ∈ z.1.2 := by
-  induction oa using OracleComp.inductionOn generalizing cache₀ z with
-  | pure a =>
-    -- For pure, the cache doesn't change: z.2 = cache₀
-    simp only [simulateQ_pure] at hz
-    -- z = ((a, []), cache₀), so z.2 = cache₀
-    have h2 : z.2 = cache₀ := by
-      have := congr_arg Prod.snd (show z = _ from hz)
-      simpa using this
-    simp [h2, hnotinit] at htu
-  | query_bind t' oa ih =>
-    -- Unfold simulateQ for query_bind
-    simp only [simulateQ_query_bind, OracleQuery.input_query,
-      OracleQuery.cont_query, id_eq] at hz
-    -- WriterT.run distributes over bind (appending logs)
-    change z ∈ support (((liftM (cachingOracle.withLogging t') >>=
-        fun x => simulateQ cachingOracle.withLogging (oa x) :
-        WriterT (QueryLog spec) (StateT (QueryCache spec) (OracleComp spec)) α)).run.run
-        cache₀) at hz
-    rw [WriterT.run_bind', StateT.run_bind] at hz
-    -- Decompose support of bind at the OracleComp level
-    rcases (mem_support_bind_iff _ _ _).1 hz with ⟨⟨⟨u', w₁⟩, cache₁⟩, hstep1, hrest⟩
-    -- u' : spec.Range t', w₁ : QueryLog spec, cache₁ : QueryCache spec
-    -- hstep1 : ((u', w₁), cache₁) ∈ support of first step
-    -- hrest has a match that reduces with the concrete pattern
-    simp only at hrest
-    -- Now hrest involves (Prod.map id (w₁ ++ ·) <$> ...).run cache₁
-    rw [StateT.run_map] at hrest
-    rw [support_map] at hrest
-    obtain ⟨z', hz', rfl⟩ := hrest
-    -- z = ((z'.1.1, w₁ ++ z'.1.2), z'.2)
-    simp only [Prod.map, Function.id_comp] at htu ⊢
-    -- htu : z'.2 t = some u
-    -- Goal: ⟨t, u⟩ ∈ w₁ ++ z'.1.2
-    rw [List.mem_append]
-    -- Case split: is t already cached in cache₁ (the cache after the first step)?
-    by_cases hstep : cache₁ t = none
-    · -- t not cached after first step: entry came from continuation
-      right; exact ih u' cache₁ z' hz' htu hstep
-    · -- t cached after first step but not initially: the first step introduced it.
-      -- Need to show ⟨t, u⟩ ∈ w₁ (the log from the first step).
-      -- The first step is cachingOracle.withLogging t', which logs ⟨t', result⟩.
-      -- Since cache₀ t = none and cache₁ t ≠ none, the first step cached t,
-      -- meaning t = t' and it was a cache miss.
-      -- withCaching preserves existing cache entries (cache only grows),
-      -- so z'.2 t = cache₁ t = some u_cached.
-      -- Therefore u equals the value cached in step 1.
-      -- The first step logs ⟨t', u'⟩ giving w₁ = [⟨t', u'⟩].
-      -- Since cache₀ t = none but cache₁ t ≠ none, the step cached t → t = t'.
-      -- By cache monotonicity z'.2 t = cache₁ t = some u', so u = u'.
-      left; sorry
-
 /-- **Birthday bound for `cachingOracle`** (total query bound):
 The probability of a collision in the cache is ≤ n²/(2|C|). -/
 theorem probEvent_cacheCollision_le_birthday_total {α : Type}
@@ -782,37 +721,28 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
     (_hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
     Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅] ≤
       (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
-  -- Derive from log version via combined logging+caching oracle.
-  -- The combined oracle `cachingOracle.withLogging` both caches and logs.
-  -- Projecting out the log recovers cachingOracle (fst_map_run_withLogging).
-  -- CacheHasCollision cache → LogHasCollision log pointwise since every
-  -- distinct cache entry (t, u) has a corresponding log entry ⟨t, u⟩.
-  -- The log collision probability is then bounded by the birthday bound.
-  let combined := ((simulateQ cachingOracle.withLogging oa).run).run ∅
-  have hproj : (fun z : (α × QueryLog spec) × QueryCache spec => (z.1.1, z.2)) <$>
-      combined = (simulateQ cachingOracle oa).run ∅ :=
-    congrArg (·.run ∅) (QueryImpl.fst_map_run_withLogging cachingOracle oa)
-  rw [← hproj, probEvent_map]
-  change Pr[fun z => CacheHasCollision z.2 | combined] ≤ _
-  -- Step 1: CacheHasCollision z.2 → LogHasCollision z.1.2 on support of combined.
-  -- Every cache entry (t, u) with cache t = some u was logged by withLogging,
-  -- so two distinct cache inputs with HEq outputs appear in the log.
-  have hcache_to_log : ∀ z ∈ support combined,
-      CacheHasCollision z.2 → LogHasCollision z.1.2 := by
-    sorry
-  -- Step 2: Monotonicity of probEvent
-  calc Pr[fun z => CacheHasCollision z.2 | combined]
-      ≤ Pr[fun z => LogHasCollision z.1.2 | combined] :=
-        probEvent_mono hcache_to_log
-    _ = Pr[fun w => LogHasCollision w.2 | Prod.fst <$> combined] := by
-        exact probEvent_comp combined Prod.fst (fun w => LogHasCollision w.2)
-    _ ≤ (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
-        -- Prod.fst <$> combined is the log distribution from cachingOracle.withLogging.
-        -- The log collision probability for the caching oracle's log is ≤ than for the
-        -- pure logging oracle's log, since caching only reduces collision opportunities
-        -- (repeated queries return cached values with same input, not contributing to
-        -- LogHasCollision which requires distinct inputs).
-        sorry
+  -- Direct proof strategy (does NOT use cachingOracle.withLogging or WriterT):
+  --
+  -- The cache from `cachingOracle` starting at `∅` after `n` queries has ≤ n entries,
+  -- each drawn uniformly and independently on cache miss. A CacheHasCollision requires
+  -- two distinct inputs t₁ ≠ t₂ with HEq outputs. By the same birthday argument as
+  -- the log version:
+  --   1. Each pair of distinct cache entries collides with probability ≤ 1/|C|
+  --      (since fresh queries draw uniformly via `probOutput_fresh_cachingOracle_query`)
+  --   2. Union bound over ≤ C(n,2) pairs gives n²/(2|C|)
+  --
+  -- The formal proof requires a simulation relation showing that the cache entries
+  -- at positions corresponding to distinct fresh queries have independent uniform
+  -- marginals — the same core ROM property used in `probEvent_pair_collision_le`
+  -- for logs but adapted to the cache's function representation.
+  --
+  -- TODO: formalize via either:
+  --   (a) an `evalDist`-level coupling between cachingOracle and loggingOracle
+  --       (using `evalDist_simulateQ_run_eq_of_impl_evalDist_eq` to relate their
+  --       joint distributions), or
+  --   (b) a direct inductive argument on `OracleComp` showing that `CacheHasCollision`
+  --       probability satisfies the same recurrence as the log collision probability.
+  sorry
 
 /-! ## Per-Index Bound Versions -/
 
