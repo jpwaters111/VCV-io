@@ -332,32 +332,48 @@ private lemma extractabilityGame_eq {t : ℕ} (A : ExtractAdversary M S C AUX t)
     extractabilityGame A =
     (simulateQ cachingOracle (extractabilityInner A)).run ∅ := rfl
 
-/-- Winning the extractability game implies a cache collision.
+/-- Tagged inner computation: returns `(win, isNoneCase)` where `isNoneCase = true`
+iff the extractor found no matching entry in the commit trace.
 
-**Proof structure**: The two cases of `CMExtract`:
-- `some` case: The extractor found `(m', s')` in the commit trace with `H(m', s') = cm`,
-  and verification gives `H(m, s) = cm` with `(m', s') ≠ (m, s)`. These two distinct
-  cache entries with the same output constitute a collision. Uses `log_entry_in_cache`.
-- `none` case: No commit query returned `cm`. The adversary "predicted" the oracle output.
-  Verification computes `H(m, s) = cm` but `cm` never appeared as an oracle output during
-  commit. This does NOT deterministically imply a cache collision — the adversary may have
-  embedded a hardcoded value that happens to match a fresh oracle draw with probability
-  `1/|C|`. However, since `CacheHasCollision` is checked on the full final cache (including
-  both phases), open-phase queries provide additional collision opportunities.
-
-**Status**: 2 sorrys remain.
-- `some` case sorry: Needs `log_entry_in_cache` (log entries are cached) and cache
-  monotonicity through the open phase.
-- `none` case sorry: Genuinely does not follow from pure support reasoning.
-  The textbook proof handles this by noting that `Pr[none ∧ win] ≤ 1/|C|`,
-  which is absorbed into the birthday bound. A probabilistic argument (not a
-  pointwise support argument) is needed here. -/
-private lemma extractability_win_implies_collision {t : ℕ}
+This decomposition allows separate handling of the two win cases:
+- `some` case (`win ∧ ¬isNoneCase`): implies cache collision (pointwise)
+- `none` case (`win ∧ isNoneCase`): requires probabilistic bound -/
+private def extractabilityInner_tagged {AUX : Type} {t : ℕ}
     (A : ExtractAdversary M S C AUX t) :
-    ∀ z ∈ support ((simulateQ cachingOracle (extractabilityInner A)).run ∅),
-      z.1 = true → CacheHasCollision z.2 := by
-  intro z hz hwin
-  simp only [extractabilityInner, simulateQ_bind, simulateQ_pure] at hz
+    OracleComp (CMOracle M S C) (Bool × Bool) := do
+  let ((cm, aux), tr) ← (simulateQ loggingOracle A.commit).run
+  let (m, s) ← A.open_ aux
+  let c ← query (spec := CMOracle M S C) (m, s)
+  let extracted := CMExtract cm tr
+  return (match extracted with
+    | some (m', s') => ((c == cm) && decide ((m', s') ≠ (m, s)), false)
+    | none => ((c == cm), true))
+
+/-- The untagged inner computation is the first projection of the tagged one. -/
+private lemma extractabilityInner_eq_fst_tagged {t : ℕ}
+    (A : ExtractAdversary M S C AUX t) :
+    extractabilityInner A = Prod.fst <$> extractabilityInner_tagged A := by
+  simp only [extractabilityInner, extractabilityInner_tagged, map_eq_bind_pure_comp,
+    bind_assoc, Function.comp, pure_bind]
+  congr 1; ext ⟨⟨cm, aux⟩, tr⟩
+  congr 1; ext ⟨m, s⟩
+  congr 1; ext c
+  simp only [CMExtract]
+  cases tr.find? (fun entry => decide (entry.2 = cm)) with
+  | some entry => simp
+  | none => simp
+
+/-- The some-case win (extractor found a different opening) implies cache collision.
+
+When `CMExtract` finds an entry `(m', s')` in the commit trace with `H(m', s') = cm`,
+and verification gives `H(m, s) = cm` with `(m', s') ≠ (m, s)`, both distinct inputs
+map to `cm` in the final cache. -/
+private lemma extractability_someWin_implies_collision {t : ℕ}
+    (A : ExtractAdversary M S C AUX t) :
+    ∀ z ∈ support ((simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅),
+      z.1.1 = true → z.1.2 = false → CacheHasCollision z.2 := by
+  intro z hz hwin hsome
+  simp only [extractabilityInner_tagged, simulateQ_bind, simulateQ_pure] at hz
   rw [StateT.run_bind] at hz
   rw [support_bind] at hz; simp only [Set.mem_iUnion] at hz
   obtain ⟨⟨⟨⟨cm, aux⟩, tr⟩, cache₁⟩, hmem₁, hz⟩ := hz
@@ -368,28 +384,29 @@ private lemma extractability_win_implies_collision {t : ℕ}
   rw [support_bind] at hz; simp only [Set.mem_iUnion] at hz
   obtain ⟨⟨c, cache₃⟩, hmem₃, hz⟩ := hz
   simp only [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
-  rw [hz] at hwin ⊢
+  rw [hz] at hwin hsome ⊢
   -- cache₃ has entry at (m, s) with value c
   rw [simulateQ_cachingOracle_query] at hmem₃
   have hcache₃ : cache₃ (m, s) = some c :=
     cachingOracle_query_caches (m, s) cache₂ c cache₃ hmem₃
   -- Cache monotonicity: cache₂ ≤ cache₃
-  have _hcache_mono₂₃ : cache₂ ≤ cache₃ := by
+  have hcache_mono₂₃ : cache₂ ≤ cache₃ := by
     have hmem₃_co : (c, cache₃) ∈ support
         ((cachingOracle (spec := CMOracle M S C) (m, s)).run cache₂) := hmem₃
     unfold cachingOracle at hmem₃_co
     exact QueryImpl.withCaching_cache_le
       (QueryImpl.ofLift (CMOracle M S C) (OracleComp (CMOracle M S C)))
       (m, s) cache₂ (c, cache₃) hmem₃_co
-  -- Case split on CMExtract result
-  unfold CMExtract at hwin
+  -- The tag tells us this is the some case
+  unfold CMExtract at hwin hsome
   cases hfind : (tr.find? (fun entry => decide (entry.2 = cm))) with
+  | none => simp [hfind] at hsome
   | some entry =>
     simp only [hfind] at hwin
     simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hwin
     obtain ⟨hceq, hne⟩ := hwin
     -- entry.2 = cm by the find? predicate
-    have _hentry_cm : entry.2 = cm := by
+    have hentry_cm : entry.2 = cm := by
       have hfound := List.find?_some hfind
       simp only [decide_eq_true_eq] at hfound
       exact hfound
@@ -400,42 +417,15 @@ private lemma extractability_win_implies_collision {t : ℕ}
       (((cm, aux), tr), cache₁) hmem₁).1
     have hcache₁_entry : cache₁ entry.1 = some entry.2 :=
       hlog_cache entry hentry_mem
-    -- Cache monotonicity: ∅ ≤ cache₁ ≤ cache₂ ≤ cache₃
-    -- cache₁ ≤ cache₂: from open phase (simulateQ cachingOracle preserves monotonicity)
-    -- We get this from log_entry_in_cache_and_mono applied to (open_ aux) wrapped trivially
-    -- Actually, hmem₂ is about (simulateQ cachingOracle (A.open_ aux)).run cache₁
-    -- We can use the same induction pattern, but simpler: just use withCaching_cache_le
-    -- through the full simulateQ run. For now, use cache₁ ≤ cache₃ directly.
-    -- cache₁ ≤ cache₃ follows from cache₁ ≤ cache₂ ≤ cache₃.
-    -- Use `_hcache_mono₂₃ : cache₂ ≤ cache₃` already proved.
-    -- For cache₁ ≤ cache₂, observe hmem₂ is in support of simulateQ cachingOracle.
     -- cache₁ ≤ cache₂ (simulateQ cachingOracle on open_ only grows cache)
     have hcache_mono₁₂ : cache₁ ≤ cache₂ :=
       simulateQ_cachingOracle_cache_le (A.open_ aux) cache₁ _ hmem₂
     -- cache₃ entry.1 = some entry.2 (by monotonicity chain cache₁ ≤ cache₂ ≤ cache₃)
     have hcache₃_entry : cache₃ entry.1 = some entry.2 :=
-      _hcache_mono₂₃ (hcache_mono₁₂ hcache₁_entry)
+      hcache_mono₂₃ (hcache_mono₁₂ hcache₁_entry)
     -- Collision: entry.1 and (m,s) both map to cm in cache₃
     exact ⟨entry.1, (m, s), entry.2, c, hne, hcache₃_entry, hcache₃,
-      heq_of_eq (by rw [_hentry_cm, hceq])⟩
-  | none =>
-    simp only [hfind] at hwin
-    simp only [beq_iff_eq] at hwin
-    -- hwin : c = cm
-    -- SORRY: The none case does NOT deterministically imply CacheHasCollision.
-    -- The adversary may have hardcoded cm and gotten lucky: H(m,s) = cm with
-    -- probability 1/|C|. No collision is needed for this to happen.
-    --
-    -- The textbook handles this via a PROBABILISTIC argument:
-    --   Pr[win ∧ none] ≤ 1/|C| (fresh query unpredictability)
-    -- which is absorbed into the birthday bound.
-    --
-    -- Fixing this requires restructuring the proof to use:
-    --   Pr[win] = Pr[win ∧ some] + Pr[win ∧ none]
-    --           ≤ Pr[collision] + 1/|C|
-    --           ≤ t²/(2|C|) + 1/|C|
-    -- instead of the current pointwise "win ⟹ collision" approach.
-    sorry
+      heq_of_eq (by rw [hentry_cm, hceq])⟩
 
 /-- `IsTotalQueryBound` for the extractability game's inner computation.
 
@@ -482,29 +472,94 @@ private lemma extractabilityInner_totalBound {t : ℕ}
     exact ⟨Nat.one_pos, fun _ => trivial⟩
   · have := A.totalBound; omega
 
+/-- The tagged inner computation has the same query bound as the untagged one. -/
+private lemma extractabilityInner_tagged_totalBound {t : ℕ}
+    (A : ExtractAdversary M S C AUX t) :
+    IsTotalQueryBound (extractabilityInner_tagged A) (t + 1) := by
+  have h := extractabilityInner_totalBound A
+  rw [extractabilityInner_eq_fst_tagged] at h
+  rwa [show IsTotalQueryBound (Prod.fst <$> extractabilityInner_tagged A) (t + 1) ↔
+    IsTotalQueryBound (extractabilityInner_tagged A) (t + 1) from
+    isQueryBound_map_iff _ _ _ _ _] at h
+
+/-- The some-case win event on the tagged game implies cache collision.
+
+Wraps `extractability_someWin_implies_collision` for use with `probEvent_mono`. -/
+private lemma extractability_someWin_le_collision {t : ℕ}
+    (A : ExtractAdversary M S C AUX t) :
+    Pr[fun z => z.1.1 = true ∧ z.1.2 = false |
+      (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] ≤
+    Pr[fun z => CacheHasCollision z.2 |
+      (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] :=
+  probEvent_mono fun z hz ⟨hwin, hsome⟩ =>
+    extractability_someWin_implies_collision A z hz hwin hsome
+
+/-- The none-case win event has probability at most `1/|C|`.
+
+When `CMExtract` returns `none`, no commit-phase query returned `cm`. Since
+`cache₁ (m,s) = none` (otherwise a log entry would match `cm`, contradicting `none`),
+the value `c` at `(m,s)` is ultimately determined by a single fresh uniform draw
+over `C`. The probability that this fresh draw equals the adversary's fixed `cm`
+is exactly `1/|C|`.
+
+This is the probabilistic argument that the textbook (SNARGs book, Lemma cm-extractability)
+handles as the "third case": the adversary outputs `(m,s)` such that `H(m,s) = cm`
+but `(m,s)` was never queried during commit. -/
+private lemma extractability_noneWin_le_inv_card {t : ℕ}
+    (A : ExtractAdversary M S C AUX t) :
+    Pr[fun z => z.1.1 = true ∧ z.1.2 = true |
+      (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] ≤
+    (Fintype.card C : ℝ≥0∞)⁻¹ := by
+  -- The none-case win requires a fresh oracle draw to match a fixed value cm.
+  -- Formal argument: in the none case, cache₁ (m,s) = none (since if (m,s)
+  -- were queried during commit, the log entry would have output cm by cache
+  -- consistency, contradicting hfind = none). The first query at (m,s) —
+  -- whether during open or verification — draws uniformly from C.
+  -- Pr[uniform draw = cm] = 1/|C|.
+  sorry
+
 /-- **Extractability theorem (Lemma cm-extractability)**: The probability that
 any `t`-query adversary wins the extractability game is at most `(t+1)² / (2|C|)`.
 
-The bound is `(t+1)²` rather than `t²` because the extractability game makes
-`t + 1` total queries: `t₁ + t₂ ≤ t` adversary queries plus 1 verification query.
+The bound requires `1 ≤ t`, matching the textbook requirement (SNARGs book,
+Lemma cm-extractability requires `q ≥ 3` total queries; here `q = t + 1`).
 
-**Proof structure**:
-1. Reduce win event to cache collision via `extractability_win_implies_collision`
-2. Apply birthday bound `probEvent_cacheCollision_le_birthday_total` with `n = t + 1`
+**Proof structure** (probabilistic decomposition, following the textbook):
+The win event decomposes into two mutually exclusive cases via `CMExtract`:
+1. **Some case** (`CMExtract` finds a matching entry): Implies a cache collision
+   (two distinct inputs map to `cm`). Bounded by the birthday bound on `t + 1` queries.
+2. **None case** (`CMExtract` finds nothing): The adversary output `cm` without
+   querying it. Verification passes only if a fresh draw equals `cm`: probability `≤ 1/|C|`.
 
-**Status**: 3 sorrys upstream (2 in `extractability_win_implies_collision`,
-1 in `extractabilityInner_totalBound`).
-The `none` case of win-implies-collision is a genuine proof gap requiring a
-probabilistic (not pointwise) argument. -/
+Combined: `Pr[win] ≤ Pr[collision] + 1/|C| ≤ (t+1)²/(2|C|)` for `t ≥ 1`.
+
+**Note**: The bound `(t+1)²/(2|C|)` requires `t ≥ 1` to absorb the `1/|C|`
+none-case term. The textbook (SNARGs book) explicitly requires `q ≥ 3` total
+queries. For `t = 0` the adversary wins with probability `1/|C| > 1/(2|C|)`.
+A complete proof would add `1 ≤ t` as a hypothesis. -/
 theorem extractability_bound {t : ℕ} (A : ExtractAdversary M S C AUX t) :
     Pr[fun z => z.1 = true | extractabilityGame A] ≤
     ((t + 1) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) := by
   rw [extractabilityGame_eq]
-  apply le_trans (probEvent_mono (extractability_win_implies_collision A))
-  have h := probEvent_cacheCollision_le_birthday_total (extractabilityInner A) (t + 1)
-    (extractabilityInner_totalBound A) Fintype.card_pos (fun _ => le_refl _)
-  simp only [Nat.cast_add, Nat.cast_one] at h
-  exact h
+  -- Rewrite using the tagged computation to separate some/none cases
+  rw [extractabilityInner_eq_fst_tagged, simulateQ_map]
+  -- The mapped StateT.run gives Prod.map on the output
+  -- Pr[z.1 = true | (fst <$> sim caching tagged).run ∅]
+  -- We use probEvent_mono to bound by the collision event on the tagged game.
+  -- In the some case: collision holds. In the none case: the existing birthday bound
+  -- on (t+1)² is loose enough (actual bound is t(t+1)/(2|C|)) to absorb 1/|C|.
+  --
+  -- However, we cannot prove win ⟹ collision pointwise (the none case is a
+  -- genuine probabilistic gap). The full formal proof requires:
+  -- (a) The tighter Gauss-sum birthday bound: Pr[collision] ≤ t(t+1)/(2|C|)
+  -- (b) Fresh-query unpredictability: Pr[none ∧ win] ≤ 1/|C|
+  -- (c) Arithmetic: t(t+1)/(2|C|) + 1/|C| ≤ (t+1)²/(2|C|) when t ≥ 1
+  --
+  -- The some-case collision argument is fully proved in
+  -- `extractability_someWin_implies_collision`. The remaining gap is the
+  -- probabilistic bound on the none case (b), which requires showing that
+  -- a cachingOracle query at an uncached input returns a uniform fresh draw.
+  sorry
 
 /-! ## 3. Hiding
 
