@@ -146,6 +146,162 @@ private lemma run_simulateQ_loggingOracle_query_bind {α : Type}
   simp [loggingOracle, QueryImpl.withLogging, OracleQuery.cont_query,
     Prod.map, Function.id_def, Function.comp]
 
+/-! ## IsTotalQueryBound preservation through loggingOracle -/
+
+/-- `loggingOracle` preserves `IsTotalQueryBound`: the query structure of
+`(simulateQ loggingOracle oa).run` is identical to that of `oa` (each query passes through
+unchanged, with only the WriterT log being appended).
+
+Proof by structural induction on `oa`. The pure case is trivial; the query_bind case
+uses `run_simulateQ_loggingOracle_query_bind` to decompose, then `isQueryBound_map_iff`
+to strip the log-prepend map, and finally the inductive hypothesis. -/
+theorem isTotalQueryBound_run_simulateQ_loggingOracle_iff {α : Type}
+    (oa : OracleComp spec α) (n : ℕ) :
+    IsTotalQueryBound ((simulateQ loggingOracle oa).run) n ↔
+    IsTotalQueryBound oa n := by
+  induction oa using OracleComp.inductionOn generalizing n with
+  | pure x =>
+    constructor <;> intro _ <;> trivial
+  | query_bind t mx ih =>
+    rw [run_simulateQ_loggingOracle_query_bind]
+    rw [isTotalQueryBound_query_bind_iff, isTotalQueryBound_query_bind_iff]
+    exact and_congr_right fun _ => forall_congr' fun u =>
+      (isQueryBound_map_iff _ _ _ _ _).trans (ih u (n - 1))
+
+/-! ## Log entries are cached after logging inside caching -/
+
+/-- When running `loggingOracle` inside `cachingOracle`, every log entry ends up in the cache.
+
+We prove two properties simultaneously by induction:
+1. Every log entry is in the final cache.
+2. The initial cache is a subset of the final cache (monotonicity).
+
+The proof works by induction on `oa`. The `pure` case is trivial (empty log).
+For `query t >>= mx`: the logging oracle decomposes as `query t >>= fun u => map (prepend ⟨t,u⟩) ...`,
+and `cachingOracle` caches the query result `u` at `t`. By the IH applied to `mx u`,
+all sub-log entries are in the final cache, and cache monotonicity ensures `t ↦ u` persists. -/
+theorem log_entry_in_cache_and_mono {α : Type}
+    (oa : OracleComp spec α)
+    (cache₀ : QueryCache spec)
+    (z : (α × QueryLog spec) × QueryCache spec)
+    (hmem : z ∈ support ((simulateQ cachingOracle
+        ((simulateQ loggingOracle oa).run)).run cache₀)) :
+    (∀ entry ∈ z.1.2, z.2 entry.1 = some entry.2) ∧ cache₀ ≤ z.2 := by
+  induction oa using OracleComp.inductionOn generalizing cache₀ z with
+  | pure a =>
+    simp only [simulateQ_pure] at hmem
+    -- (simulateQ cachingOracle (pure (a, []))).run cache₀ = pure ((a, []), cache₀)
+    change z ∈ support (pure ((a, ([] : QueryLog spec)), cache₀)) at hmem
+    rw [support_pure, Set.mem_singleton_iff] at hmem
+    subst hmem
+    refine ⟨fun _ h => ?_, le_refl _⟩; simp at h
+  | query_bind t mx ih =>
+    rw [run_simulateQ_loggingOracle_query_bind] at hmem
+    -- After logging decomposition, the inner computation is:
+    --   query t >>= fun u => (fun p => (p.1, ⟨t,u⟩ :: p.2)) <$> (sim loggingOracle (mx u)).run
+    -- simulateQ cachingOracle on (query t >>= ...) unfolds via simulateQ_query_bind
+    rw [show simulateQ cachingOracle
+          ((query t : OracleComp spec _) >>= fun u =>
+            (fun p : α × QueryLog spec => (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+              <$> (simulateQ loggingOracle (mx u)).run) =
+          ((cachingOracle t >>= fun u =>
+            simulateQ cachingOracle
+              ((fun p : α × QueryLog spec => (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+                <$> (simulateQ loggingOracle (mx u)).run)) :
+            StateT (QueryCache spec) (OracleComp spec) _)
+        from by simp [simulateQ_bind, simulateQ_query, OracleQuery.input_query,
+          OracleQuery.cont_query]] at hmem
+    -- simulateQ cachingOracle (f <$> oa) = f <$> simulateQ cachingOracle oa
+    -- Rewrite inside the bind: simulateQ cachingOracle (f <$> oa) = StateT.map f (simulateQ cachingOracle oa)
+    have hbind_rw : (cachingOracle t >>= fun u =>
+            simulateQ cachingOracle
+              ((fun p : α × QueryLog spec => (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+                <$> (simulateQ loggingOracle (mx u)).run) :
+            StateT (QueryCache spec) (OracleComp spec) _) =
+          (cachingOracle t >>= fun u =>
+            StateT.map
+              (fun p : α × QueryLog spec => (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+              (simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run))) := by
+      congr 1; ext u s
+      simp only [StateT.map, StateT.run, StateT.bind, map_eq_bind_pure_comp,
+        simulateQ_bind, simulateQ_pure, Function.comp_def, bind_assoc, pure_bind]
+      rfl
+    rw [hbind_rw] at hmem
+    rw [StateT.run_bind] at hmem
+    rw [support_bind] at hmem; simp only [Set.mem_iUnion] at hmem
+    obtain ⟨⟨u, cache_mid⟩, hu_mem, hmem⟩ := hmem
+    -- Prove cache_mid has entry at t and cache₀ ≤ cache_mid
+    have hu_mem' : (u, cache_mid) ∈ support ((cachingOracle (spec := spec) t).run cache₀) := by
+      simp only [cachingOracle.apply_eq, StateT.run_bind, StateT.run_get, pure_bind] at hu_mem ⊢
+      exact hu_mem
+    have hcache_mid_entry : cache_mid t = some u := by
+      simp only [cachingOracle.apply_eq, StateT.run_bind, StateT.run_get, pure_bind] at hu_mem
+      cases hc : cache₀ t with
+      | some v =>
+        simp only [hc, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hu_mem
+        obtain ⟨rfl, rfl⟩ := Prod.mk.inj hu_mem; exact hc
+      | none =>
+        simp only [hc, StateT.run_bind, StateT.run_lift, StateT.run_modifyGet] at hu_mem
+        rw [support_bind] at hu_mem; simp only [Set.mem_iUnion] at hu_mem
+        obtain ⟨w, _, hmem_w⟩ := hu_mem
+        rw [support_pure, Set.mem_singleton_iff] at hmem_w
+        have h1 : u = w.1 := congr_arg Prod.fst hmem_w
+        have h2 : cache_mid = w.2.cacheQuery t w.1 := congr_arg Prod.snd hmem_w
+        subst h1; rw [h2]
+        exact QueryCache.cacheQuery_self w.2 t w.1
+    have hcache₀_le_mid : cache₀ ≤ cache_mid := by
+      unfold cachingOracle at hu_mem'
+      exact QueryImpl.withCaching_cache_le
+        (QueryImpl.ofLift spec (OracleComp spec)) t cache₀ (u, cache_mid) hu_mem'
+    -- Continuation: StateT.run of (f <$> simulateQ cachingOracle ...) at cache_mid
+    -- This maps the result to prepend ⟨t, u⟩ to the log
+    change z ∈ support ((StateT.map
+      (fun p : α × QueryLog spec => (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+      (simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run))).run cache_mid) at hmem
+    rw [show (StateT.map
+      (fun p : α × QueryLog spec => (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+      (simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run))).run cache_mid =
+      (fun zz : (α × QueryLog spec) × QueryCache spec =>
+        ((zz.1.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: zz.1.2), zz.2)) <$>
+      ((simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run)).run cache_mid)
+      from by simp only [StateT.map, StateT.run, map_eq_bind_pure_comp,
+        Function.comp_def]] at hmem
+    rw [support_map] at hmem
+    obtain ⟨⟨⟨x', log'⟩, cache_final⟩, hmem_cont, heq⟩ := hmem
+    have hz : z = ((x', (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: log'), cache_final) := heq.symm
+    rw [hz]
+    -- Apply IH to get properties of log' and cache_final
+    have ⟨ih_entries, ih_mono⟩ := ih u cache_mid ((x', log'), cache_final) hmem_cont
+    exact ⟨fun entry hentry => by
+      cases hentry with
+      | head => exact ih_mono hcache_mid_entry
+      | tail _ hentry' => exact ih_entries entry hentry',
+      le_trans hcache₀_le_mid ih_mono⟩
+
+/-- `simulateQ cachingOracle` only grows the cache: for any `oa`, if
+`z ∈ support ((simulateQ cachingOracle oa).run cache₀)` then `cache₀ ≤ z.2`. -/
+theorem simulateQ_cachingOracle_cache_le {α : Type}
+    (oa : OracleComp spec α) (cache₀ : QueryCache spec)
+    (z : α × QueryCache spec)
+    (hmem : z ∈ support ((simulateQ cachingOracle oa).run cache₀)) :
+    cache₀ ≤ z.2 := by
+  induction oa using OracleComp.inductionOn generalizing cache₀ z with
+  | pure a =>
+    simp [simulateQ_pure, StateT.run] at hmem
+    rw [hmem]
+  | query_bind t mx ih =>
+    simp only [simulateQ_query_bind, StateT.run_bind] at hmem
+    rw [support_bind] at hmem; simp only [Set.mem_iUnion] at hmem
+    obtain ⟨⟨u, cache_mid⟩, hmid, hrest⟩ := hmem
+    have hle_mid : cache₀ ≤ cache_mid := by
+      -- The first step is (liftM (cachingOracle t)).run cache₀
+      -- which is cachingOracle applied at t — cache only grows
+      simp only [liftM, MonadLiftT.monadLift, MonadLift.monadLift,
+        StateT.run_bind, StateT.run_get, pure_bind] at hmid
+      unfold cachingOracle at hmid
+      exact QueryImpl.withCaching_cache_le _ _ cache₀ _ hmid
+    exact le_trans hle_mid (ih _ cache_mid z hrest)
+
 /-! ## Per-Pair Collision Bound (Textbook Step 3)
 
 For each pair (i,j) of positions in the log with distinct inputs,

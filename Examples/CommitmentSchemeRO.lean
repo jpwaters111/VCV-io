@@ -394,12 +394,30 @@ private lemma extractability_win_implies_collision {t : ℕ}
       simp only [decide_eq_true_eq] at hfound
       exact hfound
     -- entry is in the log tr
-    have _hentry_mem : entry ∈ tr := List.mem_of_find?_eq_some hfind
-    -- SORRY: Need log_entry_in_cache to show cache₁ entry.1 = some entry.2,
-    -- then cache monotonicity cache₁ ≤ cache₂ ≤ cache₃ to get
-    -- cache₃ entry.1 = some entry.2. Combined with cache₃ (m, s) = some c,
-    -- c = cm = entry.2, and entry.1 ≠ (m, s), this gives the collision.
-    sorry
+    have hentry_mem : entry ∈ tr := List.mem_of_find?_eq_some hfind
+    -- Log entries are in cache₁ (via log_entry_in_cache_and_mono)
+    have hlog_cache := (OracleComp.log_entry_in_cache_and_mono A.commit ∅
+      (((cm, aux), tr), cache₁) hmem₁).1
+    have hcache₁_entry : cache₁ entry.1 = some entry.2 :=
+      hlog_cache entry hentry_mem
+    -- Cache monotonicity: ∅ ≤ cache₁ ≤ cache₂ ≤ cache₃
+    -- cache₁ ≤ cache₂: from open phase (simulateQ cachingOracle preserves monotonicity)
+    -- We get this from log_entry_in_cache_and_mono applied to (open_ aux) wrapped trivially
+    -- Actually, hmem₂ is about (simulateQ cachingOracle (A.open_ aux)).run cache₁
+    -- We can use the same induction pattern, but simpler: just use withCaching_cache_le
+    -- through the full simulateQ run. For now, use cache₁ ≤ cache₃ directly.
+    -- cache₁ ≤ cache₃ follows from cache₁ ≤ cache₂ ≤ cache₃.
+    -- Use `_hcache_mono₂₃ : cache₂ ≤ cache₃` already proved.
+    -- For cache₁ ≤ cache₂, observe hmem₂ is in support of simulateQ cachingOracle.
+    -- cache₁ ≤ cache₂ (simulateQ cachingOracle on open_ only grows cache)
+    have hcache_mono₁₂ : cache₁ ≤ cache₂ :=
+      simulateQ_cachingOracle_cache_le (A.open_ aux) cache₁ _ hmem₂
+    -- cache₃ entry.1 = some entry.2 (by monotonicity chain cache₁ ≤ cache₂ ≤ cache₃)
+    have hcache₃_entry : cache₃ entry.1 = some entry.2 :=
+      _hcache_mono₂₃ (hcache_mono₁₂ hcache₁_entry)
+    -- Collision: entry.1 and (m,s) both map to cm in cache₃
+    exact ⟨entry.1, (m, s), entry.2, c, hne, hcache₃_entry, hcache₃,
+      heq_of_eq (by rw [_hentry_cm, hceq])⟩
   | none =>
     simp only [hfind] at hwin
     simp only [beq_iff_eq] at hwin
@@ -448,7 +466,21 @@ private lemma extractabilityInner_totalBound {t : ℕ}
   --     A.open_ aux >>= fun (m, s) =>
   --       query (m, s) >>= fun c => pure (...)
   -- Query budget: t₁ (commit) + t₂ (open) + 1 (verify) ≤ t + 1
-  sorry
+  -- Step 1: (simulateQ loggingOracle A.commit).run has bound t₁
+  have h1 : IsTotalQueryBound ((simulateQ loggingOracle A.commit).run) A.t₁ :=
+    (isTotalQueryBound_run_simulateQ_loggingOracle_iff A.commit A.t₁).mpr A.commitBound
+  -- Step 2: A.open_ aux has bound t₂ for all aux
+  -- Step 3: query (m, s) >>= pure (...) has bound 1
+  -- Combine via isTotalQueryBound_bind
+  apply isTotalQueryBound_mono (m₁ := A.t₁ + (A.t₂ + 1))
+  · apply isTotalQueryBound_bind h1
+    intro ⟨⟨cm, aux⟩, tr⟩
+    apply isTotalQueryBound_bind (A.openBound aux)
+    intro ⟨m, s⟩
+    show IsTotalQueryBound _ 1
+    rw [isTotalQueryBound_query_bind_iff]
+    exact ⟨Nat.one_pos, fun _ => trivial⟩
+  · have := A.totalBound; omega
 
 /-- **Extractability theorem (Lemma cm-extractability)**: The probability that
 any `t`-query adversary wins the extractability game is at most `(t+1)² / (2|C|)`.
