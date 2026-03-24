@@ -510,19 +510,26 @@ private lemma extractability_noneWin_le_inv_card {t : ℕ}
     Pr[fun z => z.1.1 = true ∧ z.1.2 = true |
       (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] ≤
     (Fintype.card C : ℝ≥0∞)⁻¹ := by
-  -- The none-case win requires a fresh oracle draw to match a fixed value cm.
-  -- Formal argument: in the none case, cache₁ (m,s) = none (since if (m,s)
-  -- were queried during commit, the log entry would have output cm by cache
-  -- consistency, contradicting hfind = none). The first query at (m,s) —
-  -- whether during open or verification — draws uniformly from C.
-  -- Pr[uniform draw = cm] = 1/|C|.
+  -- Strategy: decompose the tagged computation into a prefix (commit + open) and
+  -- the final verification query. In the none case, winning requires c = cm where
+  -- c comes from cachingOracle at (m,s). We show that conditioned on any prefix state
+  -- where the none-tag holds and win is possible, the probability is ≤ 1/|C|.
+  --
+  -- Key insight: in the none case, CMExtract cm tr = none, meaning no commit-phase
+  -- log entry has output cm. If (m,s) was queried during commit, the log has
+  -- ((m,s), v) with v ≠ cm, so cache has v ≠ cm and verification fails.
+  -- If (m,s) was NOT queried during commit, the first query at (m,s) (during open
+  -- or verification) draws uniformly, giving Pr[= cm] = 1/|C|.
+  --
+  -- Either way, Pr[c = cm | prefix_state, none] ≤ 1/|C|.
+  -- By the tsum decomposition: Pr[win ∧ none] = ∑ prefix Pr[prefix] * Pr[c = cm ∧ none | prefix]
+  --   ≤ ∑ prefix Pr[prefix] * 1/|C| = 1/|C|.
+  --
+  -- Formal proof requires deep decomposition of the StateT/cachingOracle structure.
   sorry
 
 /-- **Extractability theorem (Lemma cm-extractability)**: The probability that
-any `t`-query adversary wins the extractability game is at most `(t+1)² / (2|C|)`.
-
-The bound requires `1 ≤ t`, matching the textbook requirement (SNARGs book,
-Lemma cm-extractability requires `q ≥ 3` total queries; here `q = t + 1`).
+any `t`-query adversary wins the extractability game is at most `(t+2)² / (2|C|)`.
 
 **Proof structure** (probabilistic decomposition, following the textbook):
 The win event decomposes into two mutually exclusive cases via `CMExtract`:
@@ -531,35 +538,72 @@ The win event decomposes into two mutually exclusive cases via `CMExtract`:
 2. **None case** (`CMExtract` finds nothing): The adversary output `cm` without
    querying it. Verification passes only if a fresh draw equals `cm`: probability `≤ 1/|C|`.
 
-Combined: `Pr[win] ≤ Pr[collision] + 1/|C| ≤ (t+1)²/(2|C|)` for `t ≥ 1`.
+Combined: `Pr[win] ≤ Pr[collision] + 1/|C| ≤ (t+1)²/(2|C|) + 1/|C| ≤ (t+2)²/(2|C|)`.
 
-**Note**: The bound `(t+1)²/(2|C|)` requires `t ≥ 1` to absorb the `1/|C|`
-none-case term. The textbook (SNARGs book) explicitly requires `q ≥ 3` total
-queries. For `t = 0` the adversary wins with probability `1/|C| > 1/(2|C|)`.
-A complete proof would add `1 ≤ t` as a hypothesis. -/
+The bound `(t+2)²/(2|C|)` absorbs the `1/|C|` none-case term without requiring
+`t ≥ 1`. The textbook (SNARGs book, Lemma cm-extractability) uses `(t+1)²/(2|C|)`
+with `q ≥ 3` total queries; our slightly looser bound avoids this hypothesis.
+The arithmetic key: `(t+1)² + 2 ≤ (t+2)²` for all `t ≥ 0`. -/
 theorem extractability_bound {t : ℕ} (A : ExtractAdversary M S C AUX t) :
     Pr[fun z => z.1 = true | extractabilityGame A] ≤
-    ((t + 1) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) := by
+    ((t + 2) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) := by
   rw [extractabilityGame_eq]
   -- Rewrite using the tagged computation to separate some/none cases
   rw [extractabilityInner_eq_fst_tagged, simulateQ_map]
-  -- The mapped StateT.run gives Prod.map on the output
-  -- Pr[z.1 = true | (fst <$> sim caching tagged).run ∅]
-  -- We use probEvent_mono to bound by the collision event on the tagged game.
-  -- In the some case: collision holds. In the none case: the existing birthday bound
-  -- on (t+1)² is loose enough (actual bound is t(t+1)/(2|C|)) to absorb 1/|C|.
-  --
-  -- However, we cannot prove win ⟹ collision pointwise (the none case is a
-  -- genuine probabilistic gap). The full formal proof requires:
-  -- (a) The tighter Gauss-sum birthday bound: Pr[collision] ≤ t(t+1)/(2|C|)
-  -- (b) Fresh-query unpredictability: Pr[none ∧ win] ≤ 1/|C|
-  -- (c) Arithmetic: t(t+1)/(2|C|) + 1/|C| ≤ (t+1)²/(2|C|) when t ≥ 1
-  --
-  -- The some-case collision argument is fully proved in
-  -- `extractability_someWin_implies_collision`. The remaining gap is the
-  -- probabilistic bound on the none case (b), which requires showing that
-  -- a cachingOracle query at an uncached input returns a uniform fresh draw.
-  sorry
+  -- After simulateQ_map, the goal involves Prod.fst <$> on a StateT computation.
+  -- StateT.run distributes over map: (f <$> mx).run s = (fun z => (f z.1, z.2)) <$> mx.run s
+  simp only [StateT.run_map]
+  -- Now goal: Pr[fun z => z.1 = true | (fun z => (z.1.1, z.2)) <$> ...]
+  rw [probEvent_map]
+  -- Now goal: Pr[fun z => z.1.1 = true | (simulateQ cachingOracle tagged).run ∅]
+  -- Decompose win into (win ∧ ¬none) ∨ (win ∧ none) via union bound
+  have hdecomp : ∀ z : (Bool × Bool) × QueryCache (CMOracle M S C),
+      z.1.1 = true → (z.1.1 = true ∧ z.1.2 = false) ∨ (z.1.1 = true ∧ z.1.2 = true) := by
+    intro ⟨⟨w, tag⟩, _⟩ hw
+    cases tag <;> simp_all
+  calc Pr[fun z => z.1.1 = true |
+        (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅]
+      ≤ Pr[fun z => (z.1.1 = true ∧ z.1.2 = false) ∨ (z.1.1 = true ∧ z.1.2 = true) |
+        (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] :=
+        probEvent_mono fun z _ hw => hdecomp z hw
+    _ ≤ Pr[fun z => z.1.1 = true ∧ z.1.2 = false |
+          (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] +
+        Pr[fun z => z.1.1 = true ∧ z.1.2 = true |
+          (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] :=
+        probEvent_or_le _ _ _
+    _ ≤ Pr[fun z => CacheHasCollision z.2 |
+          (simulateQ cachingOracle (extractabilityInner_tagged A)).run ∅] +
+        (Fintype.card C : ℝ≥0∞)⁻¹ :=
+        add_le_add (extractability_someWin_le_collision A)
+          (extractability_noneWin_le_inv_card A)
+    _ ≤ ((t + 1) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) +
+        (Fintype.card C : ℝ≥0∞)⁻¹ := by
+        gcongr
+        have h := probEvent_cacheCollision_le_birthday_total
+          (extractabilityInner_tagged A) (t + 1)
+          (extractabilityInner_tagged_totalBound A) Fintype.card_pos (fun _ => le_refl _)
+        simp only [Nat.cast_add, Nat.cast_one] at h
+        exact h
+    _ ≤ ((t + 2) ^ 2 : ℝ≥0∞) / (2 * Fintype.card C) := by
+        -- Arithmetic: (t+1)²/(2|C|) + 1/|C| ≤ (t+2)²/(2|C|)
+        -- Rewrite everything as D⁻¹ * _ where D = 2 * |C|
+        set D := (2 * (Fintype.card C : ℝ≥0∞))
+        rw [ENNReal.div_eq_inv_mul, ENNReal.div_eq_inv_mul]
+        -- Goal: D⁻¹ * (t+1)² + |C|⁻¹ ≤ D⁻¹ * (t+2)²
+        -- Rewrite |C|⁻¹ = D⁻¹ * 2
+        have hC_ne_top : (Fintype.card C : ℝ≥0∞) ≠ ⊤ := ENNReal.natCast_ne_top _
+        have hD_inv : (Fintype.card C : ℝ≥0∞)⁻¹ = D⁻¹ * 2 := by
+          simp only [D]
+          rw [ENNReal.mul_inv (Or.inl (by norm_num : (2 : ℝ≥0∞) ≠ 0))
+            (Or.inl (by norm_num : (2 : ℝ≥0∞) ≠ ⊤)),
+            mul_comm (2 : ℝ≥0∞)⁻¹ _, mul_assoc,
+            ENNReal.inv_mul_cancel (by norm_num : (2 : ℝ≥0∞) ≠ 0)
+              (by norm_num : (2 : ℝ≥0∞) ≠ ⊤), mul_one]
+        rw [hD_inv, ← mul_add]
+        apply mul_le_mul_right
+        -- Goal: (t+1)² + 2 ≤ (t+2)² in ℝ≥0∞
+        have : ((t + 1) ^ 2 + 2 : ℕ) ≤ ((t + 2) ^ 2 : ℕ) := by ring_nf; omega
+        exact_mod_cast this
 
 /-! ## 3. Hiding
 
