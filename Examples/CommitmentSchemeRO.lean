@@ -535,50 +535,99 @@ theorem tvDist_hidingReal_hidingSim_le_probBad {AUX : Type} {t : ℕ}
     (hidingImpl₁_bad_mono s)
     (hidingImplSim_bad_mono s)
 
-/-- `Pr[bad]` bound for **uniformly random** salt.
+/-- Sum of `Pr[bad(s)]` over all salts is at most `t`.
 
-When `s` is sampled uniformly from `S`, the probability that any of the
-adversary's ≤ t queries has salt = s is at most `t / |S|`.
+The textbook (Claim cm-hiding-hit-query) samples `s` uniformly and independently
+of the adversary's queries.  The per-query argument is:
+- **Choose phase**: `A.choose` does not take `s` as input, so each choose-phase
+  query `(m_i, s_i)` has `s_i` independent of the uniform `s`.
+  Summing the indicator `[s_i = s]` over all `s ∈ S` gives exactly 1 per query.
+- **Distinguish phase**: `A.distinguish aux cm` receives `cm = H(m, s)`, but under
+  the caching oracle `cm` is a fresh uniform value independent of `s`.  By
+  symmetry, each distinguish-phase query's salt hits any particular `s` with
+  probability `1/|S|`, so the sum over all `s` is again 1 per query.
+- The adversary makes at most `t` queries total, so `∑ s, Pr[bad(s)] ≤ t`.
 
-This requires `s` to be independent of the adversary's strategy. For the choose
-phase, independence holds because `s` hasn't been revealed. For the distinguish
-phase, the textbook applies the ROM one-way entropy lemma (Lemma rom-ow-high-entropy)
-which shows that even after seeing `cm = H(m, s)`, the adversary's queries hit
-salt `s` with probability ≤ 1/|S| per query.
+The per-salt bound `Pr[bad(s)] ≤ t/|S|` does NOT hold for fixed `s` (a trivial
+adversary always querying salt `s` gives `Pr[bad] = 1`).  The correct statement
+is the sum/average version below.
 
-This bound does NOT hold for fixed `s`: an adversary that always queries salt `s`
-has `Pr[bad] = 1` (for `t ≥ 1`). -/
-theorem probEvent_hidingBad_le_of_uniform {AUX : Type} {t : ℕ}
-    (A : HidingAdversary M S C AUX t) (s : S) :
-    Pr[hidingBad ∘ Prod.snd |
-      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)].toReal ≤
-    (t : ℝ) / (Fintype.card S : ℝ) := by
-  -- This bound is correct when averaging over uniform s, but the current
-  -- statement is for fixed s. The textbook proof (Claim cm-hiding-hit-query)
-  -- relies on s being sampled uniformly and independently.
+**Proof strategy**: Swap the sum over `s` inside the probability, express
+`∑_s Pr[bad(s)]` as `𝔼[#{adversary queries with salt = s}]`, then use linearity
+of expectation and the per-query bound. -/
+theorem sum_probEvent_hidingBad_le {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    (∑ s : S, Pr[hidingBad ∘ Prod.snd |
+      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)]) ≤ t := by
+  -- STATUS: sorry — requires per-query decomposition infrastructure not yet available.
   --
-  -- For the choose phase: adversary queries are independent of s (it hasn't
-  -- seen s yet). Each query has Pr[salt = s | s uniform] = 1/|S|.
-  -- For the distinguish phase: uses ROM one-way entropy lemma.
-  -- Union bound: t₁/|S| + t₂/|S| = t/|S|.
+  -- CORRECTNESS: The statement is true. Tight example: adversary queries t distinct
+  -- salts s₁, …, sₜ; then Pr[bad(sᵢ)] = 1 and Pr[bad(s)] = 0 for s ∉ {s₁,…,sₜ},
+  -- giving ∑_s Pr[bad(s)] = t.
   --
-  -- The correct formalization would either:
-  -- (a) Sample s uniformly outside and prove 𝔼_s[Pr[bad_s]] ≤ t/|S|, or
-  -- (b) Add a hypothesis that the adversary is salt-oblivious.
+  -- PROOF SKETCH (textbook: Claim cm-hiding-hit-query):
+  -- Let counter_s = final counter value in game(s). Then:
+  --   1[bad(s)] = 1[counter_s ≥ 2] ≤ counter_s - 1  (since challenge gives counter_s ≥ 1)
+  -- So ∑_s Pr[bad(s)] ≤ ∑_s (E[counter_s] - 1).
+  --
+  -- counter_s = 1 (challenge) + #{adversary cache misses with salt = s in game(s)}.
+  -- Key independence: the adversary's query distribution is THE SAME in game(s) for
+  -- all s, because:
+  --   (a) A.choose does not receive s as input, so choose-phase queries are
+  --       independent of s entirely.
+  --   (b) A.distinguish receives cm = H(m, s), but under hidingImpl₁ this is a fresh
+  --       uniform value from C (cache miss on first salt-s query), independent of s.
+  --       So distinguish-phase queries have the same distribution for all s.
+  --
+  -- For any adversary query (m_i, s_i) with distribution independent of the game
+  -- parameter s: ∑_s 1[s_i = s] = 1. Taking expectations:
+  --   ∑_s Pr[query_i has salt = s in game(s)] = ∑_s Pr[salt_i = s] = 1.
+  -- Summing over ≤ t queries: ∑_s E[counter_s - 1] ≤ t.
+  --
+  -- FORMALIZATION BLOCKERS:
+  -- • Need to decompose `simulateQ hidingImpl₁ (hidingOa A s)` into per-query
+  --   contributions and reason about individual query salt distributions.
+  -- • Need to show the adversary's query distribution is independent of s
+  --   (the memoryless oracle argument for cm).
+  -- • Need sum-swap (Fubini) for `∑_s ∑_i` over finite probability measures.
+  -- • The `IsPerIndexQueryBound` infrastructure provides query COUNT bounds
+  --   but not per-query SALT DISTRIBUTION decomposition.
   sorry
 
-/-- **Hiding theorem (Lemma cm-hiding)**: For every salt `s`, the statistical distance
-between the real and simulated hiding games is at most `t / |S|`.
+/-- **Hiding theorem (Lemma cm-hiding, averaged version)**:
+The average statistical distance between real and simulated hiding games,
+taken over uniformly random salt `s`, is at most `t / |S|`.
 
-The proof combines:
-1. `tvDist(real, sim) ≤ Pr[bad]` (identical-until-bad, sorry 7)
-2. `Pr[bad] ≤ t/|S|` (union bound with random salt, sorry 8) -/
-theorem hiding_bound {AUX : Type} {t : ℕ}
-    (A : HidingAdversary M S C AUX t) (s : S) :
-    tvDist (hidingReal A s) (hidingSim A s) ≤ (t : ℝ) / (Fintype.card S : ℝ) := by
-  calc tvDist (hidingReal A s) (hidingSim A s)
-      ≤ Pr[hidingBad ∘ Prod.snd |
+For every individual `s`, we have `tvDist(real(s), sim(s)) ≤ Pr[bad(s)]`
+(identical-until-bad).  Summing over `s` and dividing by `|S|` gives:
+  `𝔼_s[tvDist(real(s), sim(s))] ≤ 𝔼_s[Pr[bad(s)]] ≤ t / |S|`.
+
+The per-salt bound `tvDist ≤ t/|S|` for fixed `s` is FALSE: a trivial adversary
+always querying salt `s` makes `Pr[bad] = 1`.  The textbook (Lemma cm-hiding)
+implicitly averages over the uniform salt. -/
+theorem hiding_bound_avg {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    (∑ s : S, tvDist (hidingReal A s) (hidingSim A s)) / (Fintype.card S : ℝ) ≤
+    (t : ℝ) / (Fintype.card S : ℝ) := by
+  apply div_le_div_of_nonneg_right _ (Nat.cast_nonneg _)
+  -- Step 1: tvDist ≤ Pr[bad] for each s (already proved)
+  have h1 : ∀ s : S, tvDist (hidingReal A s) (hidingSim A s) ≤
+      Pr[hidingBad ∘ Prod.snd |
+        (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)].toReal :=
+    fun s => tvDist_hidingReal_hidingSim_le_probBad A s
+  -- Step 2: Sum and use sum_probEvent_hidingBad_le
+  calc ∑ s : S, tvDist (hidingReal A s) (hidingSim A s)
+      ≤ ∑ s : S, Pr[hidingBad ∘ Prod.snd |
           (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)].toReal :=
-        tvDist_hidingReal_hidingSim_le_probBad A s
-    _ ≤ (t : ℝ) / (Fintype.card S : ℝ) :=
-        probEvent_hidingBad_le_of_uniform A s
+        Finset.sum_le_sum fun s _ => h1 s
+    _ ≤ (t : ℝ) := by
+        have hsum := sum_probEvent_hidingBad_le A
+        -- Convert from ENNReal sum bound to Real sum bound
+        have hne : ∀ s ∈ Finset.univ, Pr[hidingBad ∘ Prod.snd |
+            (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)] ≠ ⊤ :=
+          fun _ _ => probEvent_ne_top
+        rw [← ENNReal.toReal_sum hne]
+        rw [← ENNReal.toReal_natCast]
+        exact (ENNReal.toReal_le_toReal
+          (ne_top_of_le_ne_top ENNReal.coe_ne_top hsum)
+          ENNReal.coe_ne_top).mpr hsum
