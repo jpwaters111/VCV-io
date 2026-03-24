@@ -246,46 +246,255 @@ private theorem probEvent_log_entry_eq_le {α : Type}
           mul_le_mul' tsum_probOutput_le_one le_rfl
         _ = (Fintype.card (spec.Range entry.1) : ℝ≥0∞)⁻¹ := one_mul _
 
+/-- **Uniformized log entry bound**: the probability that position `k` of a `loggingOracle`
+trace equals a fixed sigma-typed entry is at most `1/|Range default|`, assuming `|Range default|`
+is minimal across all oracle indices.
+
+This is a corollary of `probEvent_log_entry_eq_le` (which gives `1/|Range entry.1|`) combined
+with the `hrange` monotonicity hypothesis. -/
+private theorem probEvent_log_output_heq_le {α : Type}
+    [Inhabited ι]
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
+    (oa : OracleComp spec α)
+    (k : ℕ) (entry : (t : spec.Domain) × spec.Range t) :
+    Pr[fun z => z.2[k]? = some entry |
+      (simulateQ loggingOracle oa).run] ≤
+      (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+  le_trans (probEvent_log_entry_eq_le oa k entry)
+    (ENNReal.inv_le_inv.mpr (by exact_mod_cast hrange entry.1))
+
+/-- Probability that the k-th log entry's output is HEq to a fixed value `u₀ : spec.Range t₀`.
+Unlike `probEvent_log_entry_eq_le` which matches the full sigma entry, this only constrains
+the output component. The bound uses `hrange` to get `1/|Range default|`.
+
+Proof by structural induction on the computation, same shape as `probEvent_log_entry_eq_le`. -/
+private theorem probEvent_log_output_match_le {α : Type}
+    [Inhabited ι]
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
+    (oa : OracleComp spec α)
+    (k : ℕ) (t₀ : spec.Domain) (u₀ : spec.Range t₀) :
+    Pr[fun z => ∃ (s : spec.Domain) (v : spec.Range s),
+        z.2[k]? = some ⟨s, v⟩ ∧ HEq u₀ v |
+      (simulateQ loggingOracle oa).run] ≤
+      (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := by
+  classical
+  induction oa using OracleComp.inductionOn generalizing k with
+  | pure _ =>
+    simp only [simulateQ_pure]
+    refine le_of_eq_of_le (probEvent_eq_zero fun z hmem h => ?_) (zero_le _)
+    simp at hmem; obtain ⟨_, rfl⟩ := hmem
+    obtain ⟨s, v, hlog, _⟩ := h; simp at hlog
+  | query_bind t mx ih =>
+    rw [run_simulateQ_loggingOracle_query_bind, probEvent_bind_eq_tsum]
+    simp_rw [probEvent_map, Function.comp_def]
+    cases k with
+    | zero =>
+      -- k = 0: position 0 is ⟨t, u'⟩, event becomes HEq u₀ u' (constant in z).
+      have hpred : ∀ u' : spec.Range t,
+          (fun z : α × QueryLog spec =>
+            ∃ (s : spec.Domain) (v : spec.Range s),
+              ((⟨t, u'⟩ : (i : spec.Domain) × spec.Range i) :: z.2)[0]? = some ⟨s, v⟩ ∧
+              HEq u₀ v) =
+          (fun _ => HEq u₀ u') := by
+        intro u'; ext z
+        constructor
+        · rintro ⟨s, v, heq, hheq⟩
+          have : (⟨t, u'⟩ : (i : spec.Domain) × spec.Range i) = ⟨s, v⟩ := by
+            simpa using heq
+          cases this; exact hheq
+        · intro h; exact ⟨t, u', by simp, h⟩
+      simp_rw [hpred]
+      -- Inner Pr is constant: either 1 (if HEq u₀ u') or 0 (otherwise).
+      simp_rw [probEvent_const, HasEvalPMF.probFailure_eq_zero, tsub_zero]
+      -- Goal: ∑' u', Pr[=u'|query t] * (if HEq u₀ u' then 1 else 0) ≤ 1/|Range default|
+      simp_rw [probOutput_query]
+      rw [ENNReal.tsum_mul_left]
+      -- Bound: each term ≤ (card t)⁻¹ * (if HEq u₀ u' then 1 else 0),
+      -- then factor out and bound the indicator sum by 1.
+      have hind_le : ∑' (u' : spec.Range t), (if HEq u₀ u' then (1 : ℝ≥0∞) else 0) ≤ 1 := by
+        -- At most one u' satisfies HEq u₀ u'.
+        have hsubsingleton : ∀ (a b : spec.Range t), HEq u₀ a → HEq u₀ b → a = b :=
+          fun a b ha hb => eq_of_heq (ha.symm.trans hb)
+        rw [tsum_eq_sum (s := Finset.univ) (by simp)]
+        rw [show ∑ u' : spec.Range t, (if HEq u₀ u' then (1 : ℝ≥0∞) else 0) =
+            ((Finset.univ.filter (fun u' : spec.Range t => HEq u₀ u')).card : ℝ≥0∞) from by
+          rw [Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
+            mul_one]]
+        exact_mod_cast Finset.card_le_one.mpr fun a ha b hb => by
+          simp only [Finset.mem_filter, Finset.mem_univ, true_and] at ha hb
+          exact hsubsingleton a b ha hb
+      calc (Fintype.card (spec.Range t) : ℝ≥0∞)⁻¹ *
+            ∑' u', (if HEq u₀ u' then (1 : ℝ≥0∞) else 0)
+        ≤ (Fintype.card (spec.Range t) : ℝ≥0∞)⁻¹ * 1 :=
+          mul_le_mul' le_rfl hind_le
+        _ = (Fintype.card (spec.Range t) : ℝ≥0∞)⁻¹ := mul_one _
+        _ ≤ (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+          ENNReal.inv_le_inv.mpr (by exact_mod_cast hrange t)
+    | succ k' =>
+      -- k > 0: position k'+1 in the prepended log = position k' in sub-log.
+      have hshift : ∀ u' : spec.Range t,
+          (fun z : α × QueryLog spec =>
+            ∃ (s : spec.Domain) (v : spec.Range s),
+              ((⟨t, u'⟩ : (i : spec.Domain) × spec.Range i) :: z.2)[k' + 1]? = some ⟨s, v⟩ ∧
+              HEq u₀ v) =
+          (fun z => ∃ (s : spec.Domain) (v : spec.Range s),
+              z.2[k']? = some ⟨s, v⟩ ∧ HEq u₀ v) := by
+        intro u'; ext z; simp only [List.getElem?_cons_succ]
+      simp_rw [hshift]
+      calc ∑' u, Pr[= u | (query t : OracleComp spec _)] *
+            Pr[fun z => ∃ (s : spec.Domain) (v : spec.Range s),
+                z.2[k']? = some ⟨s, v⟩ ∧ HEq u₀ v |
+              (simulateQ loggingOracle (mx u)).run]
+        ≤ ∑' u, Pr[= u | (query t : OracleComp spec _)] *
+            (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+          ENNReal.tsum_le_tsum fun u => mul_le_mul' le_rfl (ih u k')
+        _ = (∑' u, Pr[= u | (query t : OracleComp spec _)]) *
+            (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+          ENNReal.tsum_mul_right
+        _ ≤ 1 * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+          mul_le_mul' tsum_probOutput_le_one le_rfl
+        _ = (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := one_mul _
+
 /-- **Per-pair collision bound**: For any two positions in a `loggingOracle` trace
 with distinct inputs, the probability that their outputs are HEq-equal is ≤ 1/|C|.
 
 This is the core ROM property: distinct oracle inputs yield independent uniform outputs.
 In the `evalDist` model, each `query` call returns a fresh uniform sample.
 
-The proof decomposes via `probEvent_bind_eq_tsum`: condition on the i-th entry, then
-the j-th output is uniform by `probEvent_log_entry_eq_le`, matching any fixed value
-with probability 1/|C|. -/
+The proof is by structural induction on the computation. For `query t >>= mx`:
+- If both positions ≥ 1: they refer to sub-log positions, and the IH applies directly.
+- If one position is 0: the collision involves the fresh response `u` from `query t` and
+  a sub-log entry. By `probEvent_log_output_heq_le`, sub-log position k matching any
+  fixed entry has prob ≤ 1/|Range default|.
+
+The `hrange` hypothesis ensures that `|Range default|` is minimal across all oracle
+indices, so the per-entry bound `1/|Range s| ≤ 1/|Range default|` holds uniformly. -/
 theorem probEvent_pair_collision_le {α : Type}
     [Inhabited ι]
     (oa : OracleComp spec α)
     (n : ℕ)
     (_hbound : IsTotalQueryBound oa n)
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
     (i j : Fin n) (hij : i ≠ j) :
     Pr[fun z => z.2.length > i.val ∧ z.2.length > j.val ∧
         z.2[i]?.bind (fun ei => z.2[j]?.map (fun ej =>
           ei.1 ≠ ej.1 ∧ HEq ei.2 ej.2)) = some true |
       (simulateQ loggingOracle oa).run] ≤
       (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := by
-  -- The collision event E_{i,j} implies the j-th entry matches some fixed sigma value.
-  -- By probEvent_mono, weaken to "z.2[j]? = some entry" and apply probEvent_log_entry_eq_le.
-  -- The key subtlety: we don't know entry ahead of time, so we bound via tsum decomposition.
-  --
-  -- Expand Pr[E_{i,j}] = ∑_z (if E_{i,j}(z) then Pr[=z] else 0).
-  -- For each z with E_{i,j}(z), z.2[j]? = some ej for a specific ej.
-  -- Group by ej: Pr[E_{i,j}] = ∑_{ej} Pr[z.2[j]? = some ej ∧ E_{i,j}(z)].
-  -- Since events are disjoint: ≤ ∑_{ej that participate} Pr[z.2[j]? = some ej].
-  -- But this sum ≤ 1, not 1/|C|. Need a tighter argument.
-  --
-  -- Correct approach: use probEvent_mono to weaken to just the j-th entry matching,
-  -- then apply probEvent_log_entry_eq_le. The collision condition constrains the output,
-  -- so the weakened event has the same bound.
-  --
-  -- Actually, the simplest approach: Pr[E_{i,j}] ≤ Pr[z.2[j]? = some entry] for ANY
-  -- fixed entry, by probEvent_mono. Choose entry = ⟨default, default⟩.
-  -- But E_{i,j} does NOT imply z.2[j]? = some ⟨default, default⟩.
-  --
-  -- The correct proof requires structural induction on oa.
-  sorry
+  -- Weaken to drop the length conditions (they only strengthen the event).
+  apply le_trans (probEvent_mono fun z _ h => h.2.2)
+  -- Prove the generalized statement by induction on the computation,
+  -- dropping the Fin n / query bound structure (only needed for the union bound).
+  suffices h : ∀ (β : Type) (ob : OracleComp spec β) (i j : ℕ) (_ : i ≠ j),
+      Pr[fun z => z.2[i]?.bind (fun ei => z.2[j]?.map (fun ej =>
+        ei.1 ≠ ej.1 ∧ HEq ei.2 ej.2)) = some true |
+        (simulateQ loggingOracle ob).run] ≤
+        (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ from
+    h α oa i.val j.val (Fin.val_ne_of_ne hij)
+  intro β ob
+  induction ob using OracleComp.inductionOn with
+  | pure x =>
+    intro i j _
+    simp [simulateQ_pure]
+  | query_bind t mx ih =>
+    intro i j hij
+    rw [run_simulateQ_loggingOracle_query_bind, probEvent_bind_eq_tsum]
+    simp_rw [probEvent_map, Function.comp_def]
+    -- Log = [⟨t, u⟩] ++ sub_log(u). Position 0 → ⟨t,u⟩, position k+1 → sub_log[k].
+    cases i with
+    | zero =>
+      cases j with
+      | zero => exact absurd rfl hij
+      | succ j' =>
+        -- i = 0, j = j'+1. Collision between fresh entry ⟨t,u⟩ and sub_log[j'].
+        -- The collision event asks: t ≠ sub_log(u)[j'].1 ∧ HEq u sub_log(u)[j'].2.
+        -- For each u, the sub_log entry at j' is bounded by probEvent_log_output_heq_le.
+        -- We weaken the collision predicate to just asking that sub_log[j'] exists and
+        -- matches a specific sigma-typed entry determined by u, then sum over entries.
+        --
+        -- The bound 1/|Range default| per inner term follows because for each u,
+        -- the collision implies sub_log[j']? = some ⟨s, v⟩ for specific s, v with
+        -- HEq u v. By probEvent_log_entry_eq_le, Pr[sub_log[j']? = some ⟨s,v⟩] ≤ 1/|Range s|.
+        -- With hrange: ≤ 1/|Range default|.
+        -- The key: the event implies sub_log[j']? equals a SPECIFIC entry (not a union),
+        -- because position j' has exactly one value in each realization.
+        --
+        -- Formal argument: weaken inner Pr to ≤ 1, then factor. This gives ≤ 1, too loose.
+        -- Instead: use probEvent_mono to bound inner by probEvent_log_output_heq_le.
+        -- But the collision event (Option.map predicate = some true) implies
+        -- z.2[j']? = some ej for some ej. We bound by summing over all possible ej.
+        -- Since only ej with HEq u ej.2 contribute, and for each s there is at most one
+        -- such ej, we get ≤ ∑_s 1/|Range s|. With hrange this is ≤ |Domain|/|Range default|.
+        -- This is too loose for |Domain| > 1.
+        --
+        -- Use probEvent_log_output_match_le: for each u, the collision event at position j'
+        -- implies ∃ s v, z.2[j']? = some ⟨s, v⟩ ∧ HEq u v.
+        -- Simplify position 0 and j'+1 in the prepended log.
+        simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.bind_some]
+        -- Step 1: Weaken inner event to ∃ form via probEvent_mono, then apply helper.
+        have hweaken : ∀ u, Pr[fun z =>
+              z.2[j']?.map (fun ej => (⟨t, u⟩ : (i : spec.Domain) × spec.Range i).1 ≠ ej.1 ∧
+                HEq (⟨t, u⟩ : (i : spec.Domain) × spec.Range i).2 ej.2) = some true |
+              (simulateQ loggingOracle (mx u)).run] ≤
+            (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := fun u =>
+          le_trans (probEvent_mono fun z _ hev => by
+            match hz : z.2[j']? with
+            | none => simp [hz] at hev
+            | some ⟨s, v⟩ => simp [hz] at hev; exact ⟨s, v, rfl, hev.2⟩)
+            (probEvent_log_output_match_le hrange (mx u) j' t u)
+        calc ∑' u, Pr[= u | (query t : OracleComp spec _)] * _
+          ≤ ∑' u, Pr[= u | (query t : OracleComp spec _)] *
+              (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            ENNReal.tsum_le_tsum fun u => mul_le_mul' le_rfl (hweaken u)
+          _ = (∑' u, Pr[= u | (query t : OracleComp spec _)]) *
+              (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            ENNReal.tsum_mul_right
+          _ ≤ 1 * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            mul_le_mul' tsum_probOutput_le_one le_rfl
+          _ = (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := one_mul _
+    | succ i' =>
+      cases j with
+      | zero =>
+        -- j = 0, i = i'+1. Symmetric to the (0, j'+1) case.
+        simp only [List.getElem?_cons_zero, List.getElem?_cons_succ]
+        -- Step 1: Weaken inner event to ∃ form via probEvent_mono, then apply helper.
+        have hweaken : ∀ u, Pr[fun z =>
+              z.2[i']?.bind (fun ei =>
+                (some (⟨t, u⟩ : (i : spec.Domain) × spec.Range i)).map (fun ej =>
+                  ei.1 ≠ ej.1 ∧ HEq ei.2 ej.2)) = some true |
+              (simulateQ loggingOracle (mx u)).run] ≤
+            (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := fun u =>
+          le_trans (probEvent_mono fun z _ hev => by
+            match hz : z.2[i']? with
+            | none => simp [hz] at hev
+            | some ⟨s, v⟩ => simp [hz] at hev; exact ⟨s, v, rfl, hev.2.symm⟩)
+            (probEvent_log_output_match_le hrange (mx u) i' t u)
+        calc ∑' u, Pr[= u | (query t : OracleComp spec _)] * _
+          ≤ ∑' u, Pr[= u | (query t : OracleComp spec _)] *
+              (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            ENNReal.tsum_le_tsum fun u => mul_le_mul' le_rfl (hweaken u)
+          _ = (∑' u, Pr[= u | (query t : OracleComp spec _)]) *
+              (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            ENNReal.tsum_mul_right
+          _ ≤ 1 * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            mul_le_mul' tsum_probOutput_le_one le_rfl
+          _ = (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := one_mul _
+      | succ j' =>
+        -- Both i = i'+1, j = j'+1: collision in sub_log at (i', j'). Apply IH directly.
+        simp only [List.getElem?_cons_succ]
+        calc ∑' u, Pr[= u | (query t : OracleComp spec _)] *
+              Pr[fun z => z.2[i']?.bind (fun ei => z.2[j']?.map (fun ej =>
+                ei.1 ≠ ej.1 ∧ HEq ei.2 ej.2)) = some true |
+                (simulateQ loggingOracle (mx u)).run]
+          ≤ ∑' u, Pr[= u | (query t : OracleComp spec _)] *
+              (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            ENNReal.tsum_le_tsum fun u => mul_le_mul' le_rfl (ih u i' j' (by omega))
+        _ = (∑' u, Pr[= u | (query t : OracleComp spec _)]) *
+              (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            ENNReal.tsum_mul_right
+        _ ≤ 1 * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ :=
+            mul_le_mul' tsum_probOutput_le_one le_rfl
+        _ = (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := one_mul _
 
 /-! ## Union Bound Birthday (Textbook Steps 4-5)
 
@@ -301,7 +510,8 @@ theorem probEvent_logCollision_le_birthday_total {α : Type}
     (oa : OracleComp spec α)
     (n : ℕ)
     (hbound : IsTotalQueryBound oa n)
-    (hC : 0 < Fintype.card (spec.Range default)) :
+    (hC : 0 < Fintype.card (spec.Range default))
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
     Pr[fun z => LogHasCollision z.2 |
       (simulateQ loggingOracle oa).run] ≤
       (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
@@ -385,7 +595,7 @@ theorem probEvent_logCollision_le_birthday_total {α : Type}
           apply Finset.sum_le_sum
           intro ⟨i, j⟩ hij
           simp only [pairs, Finset.mem_filter, Finset.mem_univ, true_and] at hij
-          exact probEvent_pair_collision_le oa n hbound i j (Fin.ne_of_lt hij)
+          exact probEvent_pair_collision_le oa n hbound hrange i j (Fin.ne_of_lt hij)
         · -- Show LogHasCollision z.2 → ∃ pair in pairs, E pair z
           intro z hz hcoll
           obtain ⟨i, j, hij, hdist, heq⟩ := hcoll
@@ -568,7 +778,8 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
     (oa : OracleComp spec α)
     (n : ℕ)
     (_hbound : IsTotalQueryBound oa n)
-    (_hC : 0 < Fintype.card (spec.Range default)) :
+    (_hC : 0 < Fintype.card (spec.Range default))
+    (_hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
     Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅] ≤
       (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
   -- Derive from log version via combined logging+caching oracle.
@@ -610,12 +821,13 @@ theorem probEvent_cacheCollision_le_birthday {α : Type} {t : ℕ}
     [Inhabited ι] [Fintype ι]
     (oa : OracleComp spec α)
     (hbound : IsPerIndexQueryBound oa (fun _ => t))
-    (hC : 0 < Fintype.card (spec.Range default)) :
+    (hC : 0 < Fintype.card (spec.Range default))
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
     Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅] ≤
       ((Fintype.card ι * t) ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
   have htotal := IsTotalQueryBound.of_perIndex hbound
   simp only [Finset.sum_const, Finset.card_univ, smul_eq_mul] at htotal
-  have h := probEvent_cacheCollision_le_birthday_total oa _ htotal hC
+  have h := probEvent_cacheCollision_le_birthday_total oa _ htotal hC hrange
   simp only [Nat.cast_mul] at h; exact h
 
 /-- Birthday bound for single-index oracle specs (typical ROM case: `t²/(2|C|)`). -/
@@ -623,10 +835,11 @@ theorem probEvent_cacheCollision_le_birthday' {α : Type} {t : ℕ}
     [Inhabited ι] [Unique ι]
     (oa : OracleComp spec α)
     (hbound : IsPerIndexQueryBound oa (fun _ => t))
-    (hC : 0 < Fintype.card (spec.Range default)) :
+    (hC : 0 < Fintype.card (spec.Range default))
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
     Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅] ≤
       (t ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
-  have h := probEvent_cacheCollision_le_birthday oa hbound hC
+  have h := probEvent_cacheCollision_le_birthday oa hbound hC hrange
   simp only [Fintype.card_unique, Nat.cast_one, one_mul] at h
   exact h
 
@@ -682,10 +895,11 @@ theorem probEvent_collision_win_le {α : Type} {t : ℕ}
     (win : α × QueryCache spec → Prop)
     (hbound : IsPerIndexQueryBound oa (fun _ => t))
     (hC : 0 < Fintype.card (spec.Range default))
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
     (hwin : ∀ z ∈ support ((simulateQ cachingOracle oa).run ∅),
       win z → CacheHasCollision z.2) :
     Pr[win | (simulateQ cachingOracle oa).run ∅] ≤
       (t ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) :=
-  le_trans (probEvent_mono hwin) (probEvent_cacheCollision_le_birthday' oa hbound hC)
+  le_trans (probEvent_mono hwin) (probEvent_cacheCollision_le_birthday' oa hbound hC hrange)
 
 end OracleComp
