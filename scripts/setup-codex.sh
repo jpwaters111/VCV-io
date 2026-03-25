@@ -47,11 +47,12 @@ log "Ensuring Lean toolchain ${toolchain}"
 elan toolchain install "$toolchain"
 
 if [ -f .gitmodules ]; then
-  log "Syncing git submodules"
-  git submodule sync --recursive
-  if ! git submodule update --init --recursive; then
-    die "failed to fetch git submodules; rerun with network access"
-  fi
+  log "Syncing declared git submodules"
+  while read -r _ submodule_path; do
+    [ -n "${submodule_path:-}" ] || continue
+    git submodule sync -- "$submodule_path"
+    git submodule update --init --recursive -- "$submodule_path"
+  done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' || true)
   if [ ! -f third_party/mlkem-native/mlkem/mlkem_native.c ]; then
     die "third_party/mlkem-native is still missing after submodule sync"
   fi
@@ -62,14 +63,18 @@ if ! lake exe cache get; then
   die "failed to fetch Mathlib cache; rerun with network access"
 fi
 
-log "Building VCV-io"
-lake build
+if [ "${VCVIO_CODEX_FULL_BUILD:-0}" = "1" ]; then
+  log "Running full VCV-io build"
+  lake build
 
-log "Checking VCVio.lean in the project environment"
-lake env lean VCVio.lean
+  log "Checking VCVio.lean in the project environment"
+  lake env lean VCVio.lean
 
-log "Running smoke test"
-lake env lean VCVioTest/Smoke.lean
+  log "Running smoke test"
+  lake env lean VCVioTest/Smoke.lean
+else
+  log "Skipping full build; set VCVIO_CODEX_FULL_BUILD=1 to enable it"
+fi
 
 log "Codex environment is ready"
 printf 'Next file to open: %s\n' "Examples/OneTimePad.lean"
