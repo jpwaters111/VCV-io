@@ -119,6 +119,19 @@ lemma isQueryBound_congr
 
 end IsQueryBound
 
+/-! ## Total Query Bound -/
+
+/-- A total query bound: the computation makes at most `n` queries total
+(across all oracle indices). -/
+def IsTotalQueryBound (oa : OracleComp spec α) (n : ℕ) : Prop :=
+  IsQueryBound oa n (fun _ b => 0 < b) (fun _ b => b - 1)
+
+lemma isTotalQueryBound_query_bind_iff {t : spec.Domain}
+    {mx : spec.Range t → OracleComp spec α} {n : ℕ} :
+    IsTotalQueryBound (liftM (query t) >>= mx) n ↔
+      0 < n ∧ ∀ u, IsTotalQueryBound (mx u) (n - 1) :=
+  Iff.rfl
+
 section IsPerIndexQueryBound
 
 variable [DecidableEq ι]

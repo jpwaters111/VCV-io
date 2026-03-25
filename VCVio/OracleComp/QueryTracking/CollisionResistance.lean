@@ -60,6 +60,7 @@ def CacheHasCollision (cache : QueryCache spec) : Prop :=
 
 /-! ## Gauss Sum Arithmetic -/
 
+-- 1+2+...+(n-1) = n*(n-1)/2
 /-- The Gauss sum `∑_{k=0}^{n-1} k/N ≤ n²/(2N)`, the arithmetic core of the birthday bound. -/
 private lemma gauss_sum_inv_le (n : ℕ) (N : ℝ≥0∞) (_hN : 0 < N) :
     ∑ k ∈ range n, ((k : ℕ) : ℝ≥0∞) * N⁻¹ ≤
@@ -89,18 +90,29 @@ private lemma gauss_sum_inv_le (n : ℕ) (N : ℝ≥0∞) (_hN : 0 < N) :
             (Or.inl (by norm_num : (2 : ℝ≥0∞) ≠ ⊤))]
         ring
 
-/-! ## Total Query Bound -/
-
-/-- A total query bound: the computation makes at most `n` queries total
-(across all oracle indices). -/
-def IsTotalQueryBound {α : Type} (oa : OracleComp spec α) (n : ℕ) : Prop :=
-  IsQueryBound oa n (fun _ b => 0 < b) (fun _ b => b - 1)
-
-lemma isTotalQueryBound_query_bind_iff {α : Type} {t : spec.Domain}
-    {mx : spec.Range t → OracleComp spec α} {n : ℕ} :
-    IsTotalQueryBound (liftM (query t) >>= mx) n ↔
-      0 < n ∧ ∀ u, IsTotalQueryBound (mx u) (n - 1) := by
-  simp [IsTotalQueryBound, IsQueryBound, OracleComp.construct_query_bind]
+/-- Tight Gauss sum: `∑_{k=0}^{n-1} k/N ≤ n*(n-1)/(2N)`. -/
+lemma gauss_sum_inv_eq (n : ℕ) (N : ℝ≥0∞) :
+    ∑ k ∈ range n, ((k : ℕ) : ℝ≥0∞) * N⁻¹ =
+      ((n * (n - 1) : ℕ) : ℝ≥0∞) / (2 * N) := by
+  rw [← Finset.sum_mul]
+  have hnat : (∑ k ∈ range n, k) * 2 = n * (n - 1) :=
+    Finset.sum_range_id_mul_two n
+  have henn : 2 * (∑ k ∈ range n, (k : ℝ≥0∞)) = ((n * (n - 1) : ℕ) : ℝ≥0∞) := by
+    have hcast : (∑ k ∈ range n, (k : ℝ≥0∞)) = ((∑ k ∈ range n, k : ℕ) : ℝ≥0∞) := by
+      simp [Nat.cast_sum]
+    rw [hcast, show (2 : ℝ≥0∞) = ((2 : ℕ) : ℝ≥0∞) from by norm_num, ← Nat.cast_mul]
+    congr 1; omega
+  have heq : (∑ k ∈ range n, (k : ℝ≥0∞)) = ((n * (n - 1) : ℕ) : ℝ≥0∞) / 2 := by
+    rw [ENNReal.eq_div_iff (by norm_num : (2 : ℝ≥0∞) ≠ 0)
+      (by norm_num : (2 : ℝ≥0∞) ≠ ⊤)]
+    exact henn
+  calc (∑ k ∈ range n, (k : ℝ≥0∞)) * N⁻¹
+      = ((n * (n - 1) : ℕ) : ℝ≥0∞) / 2 * N⁻¹ := by rw [heq]
+    _ = ((n * (n - 1) : ℕ) : ℝ≥0∞) / (2 * N) := by
+        rw [ENNReal.div_eq_inv_mul, ENNReal.div_eq_inv_mul,
+          ENNReal.mul_inv (Or.inl (by norm_num : (2 : ℝ≥0∞) ≠ 0))
+            (Or.inl (by norm_num : (2 : ℝ≥0∞) ≠ ⊤))]
+        ring
 
 /-- Updating one index and summing gives sum minus one. -/
 private lemma sum_update_pred [Fintype ι] {qb : ι → ℕ} {t : ι} (ht : 0 < qb t) :
@@ -1023,9 +1035,9 @@ theorem probEvent_logCollision_le_birthday_total {α : Type}
         rw [hcard_eq, Finset.sum_mul]
         exact gauss_sum_inv_le n C (by exact_mod_cast hC)
 
-/-- **Birthday bound for `cachingOracle`** (total query bound):
-The probability of a collision in the cache is ≤ n²/(2|C|). -/
-theorem probEvent_cacheCollision_le_birthday_total {α : Type}
+/-- **Tight birthday bound for `cachingOracle`** (total query bound):
+The probability of a collision in the cache is ≤ n*(n-1)/(2|C|). -/
+theorem probEvent_cacheCollision_le_birthday_total_tight {α : Type}
     [Inhabited ι]
     (oa : OracleComp spec α)
     (n : ℕ)
@@ -1033,7 +1045,7 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
     (_hC : 0 < Fintype.card (spec.Range default))
     (_hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
     Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅] ≤
-      (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
+      ((n * (n - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
   -- Direct proof strategy (does NOT use cachingOracle.withLogging or WriterT):
   --
   -- The cache from `cachingOracle` starting at `∅` after `n` queries has ≤ n entries,
@@ -1071,7 +1083,7 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
     calc Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅]
         ≤ ∑ j ∈ range n, ((0 + j : ℕ) : ℝ≥0∞) * C⁻¹ := gen α oa n 0 _hbound ∅ h0 hbnd
       _ = ∑ j ∈ range n, (j : ℝ≥0∞) * C⁻¹ := by simp
-      _ ≤ (n ^ 2 : ℝ≥0∞) / (2 * C) := gauss_sum_inv_le n C (by positivity)
+      _ = ((n * (n - 1) : ℕ) : ℝ≥0∞) / (2 * C) := gauss_sum_inv_eq n C
   -- Main induction
   intro β ob
   induction ob using OracleComp.inductionOn with
@@ -1269,6 +1281,24 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
             rw [Finset.sum_congr rfl hsums, add_comm]
 
 
+/-- **Loose birthday bound for `cachingOracle`** (total query bound):
+The probability of a collision in the cache is ≤ n²/(2|C|).
+Derived from the tight bound `n*(n-1)/(2|C|)` since `n*(n-1) ≤ n²`. -/
+theorem probEvent_cacheCollision_le_birthday_total {α : Type}
+    [Inhabited ι]
+    (oa : OracleComp spec α)
+    (n : ℕ)
+    (hbound : IsTotalQueryBound oa n)
+    (hC : 0 < Fintype.card (spec.Range default))
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
+    Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅] ≤
+      (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
+  calc Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle oa).run ∅]
+      ≤ ((n * (n - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) :=
+        probEvent_cacheCollision_le_birthday_total_tight oa n hbound hC hrange
+    _ ≤ (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
+        gcongr; exact_mod_cast (show n * (n - 1) ≤ n ^ 2 by nlinarith [Nat.sub_le n 1])
+
 /-! ## Per-Index Bound Versions -/
 
 /-- Birthday bound for `cachingOracle` with per-index query bound. -/
@@ -1339,20 +1369,28 @@ theorem probEvent_unqueried_match_le {α : Type} {t : ℕ}
         mul_le_mul' probEvent_le_one le_rfl
     _ = (Fintype.card (spec'.Range predict) : ℝ≥0∞)⁻¹ := one_mul _
 
-/-- **Cache preimage bound**: the probability that any newly-created cache entry
-equals a fixed target value `v₀` is at most `n / |C|`, where `n` is the total
-query bound. Each fresh draw is independent uniform, so by a union bound over
-the at most `n` cache-miss queries, the probability is at most `n * (1/|C|)`.
+/-- **Cache preimage bound**: if the initial cache contains at most one preimage
+of a target value `v₀`, then the probability that `simulateQ cachingOracle oa`
+creates a fresh cache entry equal to `v₀` is at most `n / |C|`, where `n` is the
+total query bound. Each cache miss is a fresh uniform draw, so a union bound
+over the at most `n` misses gives the result.
 
-This is the key lemma for bounding the "none case" in extractability. -/
-theorem probEvent_cache_has_value_le {α : Type}
+This is the reusable ROM lemma for the extractability "fresh target hit" case. -/
+theorem probEvent_cache_has_value_le_of_unique_preimage {α : Type}
     [Inhabited ι]
     (oa : OracleComp spec α)
     (n : ℕ) (hbound : IsTotalQueryBound oa n)
     (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
     (v₀ : spec.Range default)
     (cache₀ : QueryCache spec)
-    (hno_v₀ : ∀ t₀ : spec.Domain, ∀ v : spec.Range t₀, cache₀ t₀ = some v → ¬HEq v v₀) :
+    (hunique_v₀ :
+      ∀ t₀ t₁ : spec.Domain,
+        ∀ v₁ : spec.Range t₀, ∀ v₂ : spec.Range t₁,
+          cache₀ t₀ = some v₁ →
+          cache₀ t₁ = some v₂ →
+          HEq v₁ v₀ →
+          HEq v₂ v₀ →
+          t₀ = t₁) :
     Pr[fun z => ∃ t₀ : spec.Domain, ∃ v : spec.Range t₀,
         z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
       (simulateQ cachingOracle oa).run cache₀] ≤
@@ -1388,7 +1426,7 @@ theorem probEvent_cache_has_value_le {α : Type}
       rw [hrun]
       calc Pr[fun z => ∃ t₀ v, z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
             (simulateQ cachingOracle (mx v)).run cache₀]
-          ≤ ((n - 1 : ℕ) : ℝ≥0∞) * C⁻¹ := ih v (n - 1) (hrest v) cache₀ hno_v₀
+          ≤ ((n - 1 : ℕ) : ℝ≥0∞) * C⁻¹ := ih v (n - 1) (hrest v) cache₀ hunique_v₀
         _ ≤ (n : ℝ≥0∞) * C⁻¹ := by
             gcongr
             exact_mod_cast Nat.sub_le n 1
@@ -1426,15 +1464,28 @@ theorem probEvent_cache_has_value_le {α : Type}
             (simulateQ cachingOracle (mx u)).run (cache₀.cacheQuery t u)] ≤
           ((n - 1 : ℕ) : ℝ≥0∞) * C⁻¹ := by
         intro u heq_v₀
-        have hno_v₀' : ∀ t₀ : spec.Domain, ∀ v : spec.Range t₀,
-            (cache₀.cacheQuery t u) t₀ = some v → ¬HEq v v₀ := by
-          intro t₀ v hcache₁
-          by_cases heq_t : t₀ = t
-          · subst heq_t
+        have hunique_v₀' :
+            ∀ t₀ t₁ : spec.Domain,
+              ∀ v₁ : spec.Range t₀, ∀ v₂ : spec.Range t₁,
+                (cache₀.cacheQuery t u) t₀ = some v₁ →
+                (cache₀.cacheQuery t u) t₁ = some v₂ →
+                HEq v₁ v₀ →
+                HEq v₂ v₀ →
+                t₀ = t₁ := by
+          intro t₀ t₁ v₁ v₂ hcache₁ hcache₂ hheq₁ hheq₂
+          by_cases heq_t₀ : t₀ = t
+          · subst heq_t₀
             rw [QueryCache.cacheQuery_self] at hcache₁
-            cases hcache₁; exact heq_v₀
-          · rw [QueryCache.cacheQuery_of_ne _ _ heq_t] at hcache₁
-            exact hno_v₀ t₀ v hcache₁
+            cases hcache₁
+            exact False.elim (heq_v₀ hheq₁)
+          · by_cases heq_t₁ : t₁ = t
+            · subst heq_t₁
+              rw [QueryCache.cacheQuery_self] at hcache₂
+              cases hcache₂
+              exact False.elim (heq_v₀ hheq₂)
+            · rw [QueryCache.cacheQuery_of_ne _ _ heq_t₀] at hcache₁
+              rw [QueryCache.cacheQuery_of_ne _ _ heq_t₁] at hcache₂
+              exact hunique_v₀ t₀ t₁ v₁ v₂ hcache₁ hcache₂ hheq₁ hheq₂
         calc Pr[fun z => ∃ t₀ v, z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
               (simulateQ cachingOracle (mx u)).run (cache₀.cacheQuery t u)]
             ≤ Pr[fun z => ∃ t₀ v, z.2 t₀ = some v ∧
@@ -1454,7 +1505,7 @@ theorem probEvent_cache_has_value_le {α : Type}
                 rw [hzu] at hcache_f; cases hcache_f
                 exact heq_v₀ hheq
               · exact ⟨t₀, v, hcache_f, QueryCache.cacheQuery_of_ne _ _ heq_t ▸ hnone₀, hheq⟩
-          _ ≤ ((n - 1 : ℕ) : ℝ≥0∞) * C⁻¹ := ih u (n - 1) (hrest u) _ hno_v₀'
+          _ ≤ ((n - 1 : ℕ) : ℝ≥0∞) * C⁻¹ := ih u (n - 1) (hrest u) _ hunique_v₀'
       -- Strategy: each Pr[=u]*inner ≤ C⁻¹ (for match) or Pr[=u]*(n-1)*C⁻¹ (for non-match)
       -- Summing: ≤ C⁻¹ + (n-1)*C⁻¹ = n*C⁻¹
       -- Key: the "match" terms sum to ≤ C⁻¹ because Pr[=u|query t] ≤ 1/|Range t| ≤ C⁻¹
@@ -1521,6 +1572,47 @@ theorem probEvent_cache_has_value_le {α : Type}
             have h1n : 1 + (n - 1 : ℕ) = n := Nat.add_sub_cancel' (by omega : 1 ≤ n)
             rw [show (1 : ℝ≥0∞) + ((n - 1 : ℕ) : ℝ≥0∞) = ((1 + (n - 1) : ℕ) : ℝ≥0∞) from by
               push_cast; rfl, h1n]
+
+/-- Special case of
+`probEvent_cache_has_value_le_of_unique_preimage` when the initial cache
+contains at most one preimage of `v₀` because the cache is collision-free. -/
+theorem probEvent_cache_has_value_le_of_noCollision {α : Type}
+    [Inhabited ι]
+    (oa : OracleComp spec α)
+    (n : ℕ) (hbound : IsTotalQueryBound oa n)
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
+    (v₀ : spec.Range default)
+    (cache₀ : QueryCache spec)
+    (hno : ¬ CacheHasCollision cache₀) :
+    Pr[fun z => ∃ t₀ : spec.Domain, ∃ v : spec.Range t₀,
+        z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
+      (simulateQ cachingOracle oa).run cache₀] ≤
+      (n : ℝ≥0∞) * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := by
+  refine probEvent_cache_has_value_le_of_unique_preimage
+    (oa := oa) (n := n) hbound hrange v₀ cache₀ ?_
+  intro t₀ t₁ v₁ v₂ hcache₀ hcache₁ hheq₀ hheq₁
+  by_contra hne
+  exact hno ⟨t₀, t₁, v₁, v₂, hne, hcache₀, hcache₁, hheq₀.trans hheq₁.symm⟩
+
+/-- Special case of
+`probEvent_cache_has_value_le_of_unique_preimage` when the initial cache
+contains no preimage of `v₀`. -/
+theorem probEvent_cache_has_value_le {α : Type}
+    [Inhabited ι]
+    (oa : OracleComp spec α)
+    (n : ℕ) (hbound : IsTotalQueryBound oa n)
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
+    (v₀ : spec.Range default)
+    (cache₀ : QueryCache spec)
+    (hno_v₀ : ∀ t₀ : spec.Domain, ∀ v : spec.Range t₀, cache₀ t₀ = some v → ¬HEq v v₀) :
+    Pr[fun z => ∃ t₀ : spec.Domain, ∃ v : spec.Range t₀,
+        z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
+      (simulateQ cachingOracle oa).run cache₀] ≤
+      (n : ℝ≥0∞) * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹ := by
+  refine probEvent_cache_has_value_le_of_unique_preimage
+    (oa := oa) (n := n) hbound hrange v₀ cache₀ ?_
+  intro t₀ t₁ v₁ _ hcache₁ _ hheq₁ _
+  exact False.elim ((hno_v₀ t₀ v₁ hcache₁) hheq₁)
 
 end Unpredictability
 
