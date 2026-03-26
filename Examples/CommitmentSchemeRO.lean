@@ -11,6 +11,7 @@ import VCVio.OracleComp.QueryTracking.LoggingOracle
 import VCVio.OracleComp.QueryTracking.QueryBound
 import VCVio.OracleComp.QueryTracking.CollisionResistance
 import VCVio.EvalDist.TVDist
+import VCVio.ProgramLogic.Notation
 import VCVio.ProgramLogic.Relational.SimulateQ
 
 /-!
@@ -1720,6 +1721,109 @@ private theorem challenge_count_pos_of_mem_support_hidingImplCountAll
       (M := M) (S := S) (C := C) (oa := A.distinguish aux qch.1)
       (st₀ := qch.2) (z := z) hz' s)
 
+/-- On support of the counted hiding run, the bad-event indicator at the challenge salt
+is bounded by the excess of that salt count over the mandatory challenge hit. -/
+private lemma bad_indicator_le_count_pred_of_mem_support_run_hidingImplCountAll
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S)
+    {z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ))}
+    (hz : z ∈ support ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))) :
+    (if 2 ≤ z.2.2 s then (1 : ℝ≥0∞) else 0) ≤ z.2.2 s - 1 := by
+  have hpos : 1 ≤ z.2.2 s :=
+    challenge_count_pos_of_mem_support_hidingImplCountAll
+      (M := M) (S := S) (C := C) A s hz
+  by_cases hbad : 2 ≤ z.2.2 s
+  · have hcount : (1 : ℕ) ≤ z.2.2 s - 1 := by omega
+    simp [hbad]
+    exact_mod_cast hcount
+  · simp [hbad]
+
+/-- On support of the counted hiding run, the challenge-salt excess count is bounded
+by the adversary's total query budget. -/
+private lemma count_pred_le_queryBound_of_mem_support_run_hidingImplCountAll
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S)
+    {z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ))}
+    (hz : z ∈ support ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))) :
+    z.2.2 s - 1 ≤ t := by
+  have hsum :
+      (∑ s' : S, z.2.2 s') ≤ t + 1 :=
+    by
+      simpa using
+        (sum_counts_le_of_mem_support_run_hidingImplCountAll
+          (M := M) (S := S) (C := C)
+          (oa := hidingOa A s)
+          (hbound := hidingOa_totalBound_current (M := M) (S := S) (C := C) A s)
+          (st₀ := (∅, fun _ => 0)) (z := z) hz)
+  have hs_le : z.2.2 s ≤ ∑ s' : S, z.2.2 s' := by
+    classical
+    simpa using Finset.single_le_sum
+      (fun _ _ => Nat.zero_le _) (Finset.mem_univ s)
+  omega
+
+/-- Combined pointwise bound used when converting the bad event to an indicator
+expectation over counted support points. -/
+private lemma bad_indicator_le_queryBound_of_mem_support_run_hidingImplCountAll
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S)
+    {z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ))}
+    (hz : z ∈ support ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))) :
+    (if 2 ≤ z.2.2 s then (1 : ℝ≥0∞) else 0) ≤ t := by
+  exact le_trans
+    (bad_indicator_le_count_pred_of_mem_support_run_hidingImplCountAll
+      (M := M) (S := S) (C := C) A s hz)
+    (by
+      exact_mod_cast
+        (count_pred_le_queryBound_of_mem_support_run_hidingImplCountAll
+          (M := M) (S := S) (C := C) A s hz))
+
+/-- Fixed-salt bridge from the counted bad event to the expected excess count. -/
+private lemma probEvent_countAll_bad_le_wp_countPred
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    Pr[fun z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ)) => 2 ≤ z.2.2 s |
+      (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] ≤
+    OracleComp.ProgramLogic.wp
+      ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+      (fun z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ)) => (z.2.2 s - 1 : ℝ≥0∞)) := by
+  rw [OracleComp.ProgramLogic.probEvent_eq_wp_propInd,
+    OracleComp.ProgramLogic.wp_eq_tsum, OracleComp.ProgramLogic.wp_eq_tsum]
+  refine ENNReal.tsum_le_tsum fun z => ?_
+  by_cases hz : z ∈ support ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+  · simp only [OracleComp.ProgramLogic.propInd_eq_ite]
+    exact mul_le_mul'
+      le_rfl
+      (bad_indicator_le_count_pred_of_mem_support_run_hidingImplCountAll
+        (M := M) (S := S) (C := C) A s hz)
+  · rw [probOutput_eq_zero_of_not_mem_support hz]
+    simp [OracleComp.ProgramLogic.propInd_eq_ite]
+
+/-- Fixed-salt expectation bound for the counted excess at the challenge salt. -/
+private lemma wp_countPred_le_queryBound_of_run_hidingImplCountAll
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    OracleComp.ProgramLogic.wp
+      ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+      (fun z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ)) => (z.2.2 s - 1 : ℝ≥0∞)) ≤ t := by
+  rw [OracleComp.ProgramLogic.wp_eq_tsum]
+  calc
+    ∑' z, Pr[= z | (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] *
+        (z.2.2 s - 1 : ℝ≥0∞)
+      ≤
+        ∑' z, Pr[= z | (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] * t := by
+          refine ENNReal.tsum_le_tsum fun z => ?_
+          by_cases hz : z ∈ support ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+          · exact mul_le_mul'
+              le_rfl
+              (by
+                exact_mod_cast
+                  (count_pred_le_queryBound_of_mem_support_run_hidingImplCountAll
+                    (M := M) (S := S) (C := C) A s hz))
+          · rw [probOutput_eq_zero_of_not_mem_support hz]
+            simp
+    _ = t := by
+        rw [ENNReal.tsum_mul_right, HasEvalPMF.tsum_probOutput_eq_one, one_mul]
+
 /-- The simulated hiding game, parametrized by salt `s`.
 
 The adversary runs `hidingOa A s` (which includes the challenge query `(m, s)`)
@@ -1797,6 +1901,42 @@ private lemma run_simulateQ_hidingAvgRightImpl_eq_liftComp {α : Type}
       exact OracleComp.bind_congr' hstep (fun p => by
         simpa using ih p.1 p.2)
 
+private lemma run_simulateQ_hidingAvgComp_eq_bind {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0) =
+      (liftM (query (spec := Unit →ₒ S) ()) >>= fun s =>
+        Prod.map (fun b => (s, b)) id <$>
+          OracleComp.liftComp
+            ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+            (HidingAvgSpec M S C)) := by
+  have hleftrun :
+      (simulateQ hidingAvgQueryImpl
+          (query (spec := HidingAvgSpec M S C) (Sum.inl ()) : OracleComp (HidingAvgSpec M S C) S)).run
+          (∅, fun _ => 0) =
+        (liftM (query (spec := Unit →ₒ S) ()) >>= fun s => pure (s, (∅, fun _ => 0))) := by
+    simp [hidingAvgQueryImpl, hidingAvgLeftImpl, simulateQ_query]
+  rw [hidingAvgComp, simulateQ_bind, StateT.run_bind, hleftrun]
+  simp only [bind_assoc, pure_bind]
+  refine OracleComp.bind_congr' rfl ?_
+  intro s
+  rw [simulateQ_bind, StateT.run_bind]
+  rw [show simulateQ hidingAvgQueryImpl
+      ((hidingOa A s : OracleComp (CMOracle M S C) Bool).liftComp (HidingAvgSpec M S C)) =
+        simulateQ hidingAvgRightImpl (hidingOa A s) by
+        simpa [hidingAvgQueryImpl, OracleComp.liftComp_eq_liftM] using
+          (QueryImpl.simulateQ_add_liftComp_right
+            (impl₁' := hidingAvgLeftImpl) (impl₂' := hidingAvgRightImpl)
+            (hidingOa A s))]
+  rw [run_simulateQ_hidingAvgRightImpl_eq_liftComp]
+  change
+    ((fun a : Bool × HidingCountState M S C => ((s, a.1), a.2)) <$>
+      (liftM ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)) :
+        OracleComp (HidingAvgSpec M S C) (Bool × HidingCountState M S C))) =
+    ((fun a : Bool × HidingCountState M S C => ((s, a.1), a.2)) <$>
+      (liftM ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)) :
+        OracleComp (HidingAvgSpec M S C) (Bool × HidingCountState M S C)))
+  rfl
+
 /-- Averaged-mass bridge for hiding.
 
 This packages the per-salt bad probabilities into the shared `hidingAvgComp`
@@ -1810,77 +1950,132 @@ theorem sum_probEvent_hidingBad_eq_avg_bad_mass {AUX : Type} {t : ℕ}
       Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
         (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] := by
   classical
-  have hrun :
-      (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0) =
-        (do
-          let s ← OracleComp.liftComp
-            ((query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S))
-            (HidingAvgSpec M S C)
-          Prod.map (fun b => (s, b)) id <$>
-            OracleComp.liftComp
-              ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
-              (HidingAvgSpec M S C)) := by
-    simp [hidingAvgComp, hidingAvgQueryImpl, hidingAvgLeftImpl,
-      simulateQ_bind, simulateQ_query, StateT.run_bind, QueryImpl.add_apply_inl,
-      QueryImpl.add_apply_inr, QueryImpl.liftTarget_apply, QueryImpl.ofLift_apply,
-      map_eq_bind_pure_comp, bind_assoc, run_simulateQ_hidingAvgRightImpl_eq_liftComp]
+  let P : S → ℝ≥0∞ := fun s =>
+    Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+      (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)]
+  have hrun := run_simulateQ_hidingAvgComp_eq_bind (M := M) (S := S) (C := C) A
   have hprob :
       Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
-        (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] =
-      ∑' s : S, Pr[= s | (query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S)] *
-        Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-          (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
-    rw [hrun, probEvent_bind_eq_tsum]
-    refine tsum_congr fun s => ?_
-    simp_rw [probEvent_map, probEvent_liftComp, probOutput_liftComp]
-    rfl
+          (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] =
+        ∑ s : S, Pr[= s | (query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S)] * P s := by
+    rw [hrun, probEvent_bind_eq_tsum, tsum_fintype]
+    refine Finset.sum_congr rfl ?_
+    intro s hs
+    have hsprob :
+        Pr[= s | (query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S)] =
+          (Fintype.card S : ℝ≥0∞)⁻¹ := by
+      simpa using (probOutput_query (spec := Unit →ₒ S) () s)
+    rw [probEvent_map, probEvent_liftComp, hsprob]
+    congr 1
+  have hcard0 : (Fintype.card S : ℝ≥0∞) ≠ 0 := by simp
+  have hcard_top : (Fintype.card S : ℝ≥0∞) ≠ ∞ := by simp
   calc
     (∑ s : S, Pr[hidingBad ∘ Prod.snd |
       (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)])
-        =
-      ∑ s : S, Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-        (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+        = ∑ s : S, P s := by
+            refine Finset.sum_congr rfl ?_
+            intro s hs
+            simpa [P] using
+              probEvent_hidingBad_eq_countAll (M := M) (S := S) (C := C) A s
+    _ = ∑ s : S, (Fintype.card S : ℝ≥0∞) * ((Fintype.card S : ℝ≥0∞)⁻¹ * P s) := by
           refine Finset.sum_congr rfl ?_
-          intro s _
-          simpa using probEvent_hidingBad_eq_countAll
-            (M := M) (S := S) (C := C) (A := A) s
-    _ = ∑' s : S, Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-        (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
-          rw [tsum_fintype]
-    _ =
-      (Fintype.card S : ℝ≥0∞) *
-        Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
-          (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] := by
-            rw [hprob]
-            let hS : ℝ≥0∞ := Fintype.card S
-            have hS0 : hS ≠ 0 := by simp [hS]
-            have hStop : hS ≠ ∞ := by simp [hS]
+          intro s hs
+          calc
+            P s = 1 * P s := by rw [one_mul]
+            _ = ((Fintype.card S : ℝ≥0∞) * (Fintype.card S : ℝ≥0∞)⁻¹) * P s := by
+                  rw [ENNReal.mul_inv_cancel hcard0 hcard_top]
+            _ = (Fintype.card S : ℝ≥0∞) * ((Fintype.card S : ℝ≥0∞)⁻¹ * P s) := by
+                  rw [mul_assoc]
+    _ = (Fintype.card S : ℝ≥0∞) * ∑ s : S, (Fintype.card S : ℝ≥0∞)⁻¹ * P s := by
+          rw [Finset.mul_sum]
+    _ = (Fintype.card S : ℝ≥0∞) * ∑ s : S,
+          Pr[= s | (query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S)] * P s := by
+          simp_rw [probOutput_query]
+    _ = (Fintype.card S : ℝ≥0∞) *
+          Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
+            (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] := by
+          rw [hprob]
+
+private lemma probEvent_hidingAvg_bad_le_wp_selectedCountPred
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
+      (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] ≤
+    OracleComp.ProgramLogic.wp
+      ((simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0))
+      (fun z : ((S × Bool) × HidingCountState M S C) => (z.2.2 z.1.1 - 1 : ℝ≥0∞)) := by
+  let oa :=
+    (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)
+  have h :=
+    OracleComp.ProgramLogic.markov_bound
+      oa
+      (fun z : ((S × Bool) × HidingCountState M S C) => (z.2.2 z.1.1 - 1 : ℝ≥0∞))
+      1
+      (fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1)
+      (fun z hz => by
+        have hnat : (1 : ℕ) ≤ z.2.2 z.1.1 - 1 := by omega
+        exact_mod_cast hnat)
+  simpa [oa] using h
+
+private lemma card_mul_wp_hidingAvg_selectedCountPred_eq_sum_wp_countPred
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    (Fintype.card S : ℝ≥0∞) *
+      OracleComp.ProgramLogic.wp
+        ((simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0))
+        (fun z : ((S × Bool) × HidingCountState M S C) => (z.2.2 z.1.1 - 1 : ℝ≥0∞)) =
+    ∑ s : S,
+      OracleComp.ProgramLogic.wp
+        ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+        (fun z : Bool × HidingCountState M S C => (z.2.2 s - 1 : ℝ≥0∞)) := by
+  classical
+  let Q : S → ℝ≥0∞ := fun s =>
+    OracleComp.ProgramLogic.wp
+      ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+      (fun z : Bool × HidingCountState M S C => (z.2.2 s - 1 : ℝ≥0∞))
+  have hwp :
+      OracleComp.ProgramLogic.wp
+          ((simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0))
+          (fun z : ((S × Bool) × HidingCountState M S C) => (z.2.2 z.1.1 - 1 : ℝ≥0∞)) =
+        ∑ s : S,
+          Pr[= s | (query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S)] * Q s := by
+    rw [run_simulateQ_hidingAvgComp_eq_bind, OracleComp.ProgramLogic.wp_bind,
+      OracleComp.ProgramLogic.wp_eq_tsum, tsum_fintype]
+    refine Finset.sum_congr rfl ?_
+    intro s hs
+    rw [OracleComp.ProgramLogic.wp_map, OracleComp.ProgramLogic.wp_liftComp]
+    rfl
+  have hcard0 : (Fintype.card S : ℝ≥0∞) ≠ 0 := by simp
+  have hcard_top : (Fintype.card S : ℝ≥0∞) ≠ ∞ := by simp
+  calc
+    (Fintype.card S : ℝ≥0∞) *
+        OracleComp.ProgramLogic.wp
+          ((simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0))
+          (fun z : ((S × Bool) × HidingCountState M S C) => (z.2.2 z.1.1 - 1 : ℝ≥0∞))
+      = (Fintype.card S : ℝ≥0∞) * ∑ s : S,
+          Pr[= s | (query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S)] * Q s := by
+            rw [hwp]
+    _ = (Fintype.card S : ℝ≥0∞) * ∑ s : S,
+          (Fintype.card S : ℝ≥0∞)⁻¹ * Q s := by
             simp_rw [probOutput_query]
-            calc
-              ∑' s : S, Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] =
-                  ∑' s : S, hS * (hS⁻¹ *
-                    Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-                      (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)]) := by
-                        refine tsum_congr fun s => ?_
-                        calc
-                          Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-                              (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] =
-                              1 * Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-                                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
-                                  rw [one_mul]
-                          _ =
-                              (hS * hS⁻¹) * Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-                                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
-                                  rw [ENNReal.mul_inv_cancel hS0 hStop]
-                          _ = hS * (hS⁻¹ *
-                              Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-                                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)]) := by
-                                  rw [mul_assoc]
-              _ = hS * ∑' s : S, hS⁻¹ *
-                  Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
-                    (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
-                      rw [ENNReal.tsum_mul_left.symm]
+    _ = ∑ s : S, (Fintype.card S : ℝ≥0∞) * ((Fintype.card S : ℝ≥0∞)⁻¹ * Q s) := by
+          rw [Finset.mul_sum]
+    _ = ∑ s : S, Q s := by
+          refine Finset.sum_congr rfl ?_
+          intro s hs
+          calc
+            (Fintype.card S : ℝ≥0∞) * ((Fintype.card S : ℝ≥0∞)⁻¹ * Q s)
+              = ((Fintype.card S : ℝ≥0∞) * (Fintype.card S : ℝ≥0∞)⁻¹) * Q s := by
+                  rw [mul_assoc]
+            _ = 1 * Q s := by
+                  rw [ENNReal.mul_inv_cancel hcard0 hcard_top]
+            _ = Q s := by
+                  rw [one_mul]
+    _ = ∑ s : S,
+          OracleComp.ProgramLogic.wp
+            ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+            (fun z : Bool × HidingCountState M S C => (z.2.2 s - 1 : ℝ≥0∞)) := by
+          simp [Q]
 
 /-- The real hiding game is `simulateQ cachingOracle` applied to the shared computation. -/
 theorem hidingReal_eq {AUX : Type} {t : ℕ}
