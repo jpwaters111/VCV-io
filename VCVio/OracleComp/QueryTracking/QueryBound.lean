@@ -132,6 +132,57 @@ lemma isTotalQueryBound_query_bind_iff {t : spec.Domain}
       0 < n ∧ ∀ u, IsTotalQueryBound (mx u) (n - 1) :=
   Iff.rfl
 
+lemma IsTotalQueryBound.mono {oa : OracleComp spec α} {n₁ n₂ : ℕ}
+    (h : IsTotalQueryBound oa n₁) (hle : n₁ ≤ n₂) :
+    IsTotalQueryBound oa n₂ := by
+  induction oa using OracleComp.inductionOn generalizing n₁ n₂ with
+  | pure _ =>
+      exact trivial
+  | query_bind t mx ih =>
+      rw [isTotalQueryBound_query_bind_iff] at h ⊢
+      exact ⟨Nat.lt_of_lt_of_le h.1 hle,
+        fun u => ih u (h.2 u) (Nat.sub_le_sub_right hle 1)⟩
+
+lemma isTotalQueryBound_bind {oa : OracleComp spec α} {ob : α → OracleComp spec β}
+    {n₁ n₂ : ℕ}
+    (h1 : IsTotalQueryBound oa n₁) (h2 : ∀ x, IsTotalQueryBound (ob x) n₂) :
+    IsTotalQueryBound (oa >>= ob) (n₁ + n₂) := by
+  induction oa using OracleComp.inductionOn generalizing n₁ with
+  | pure x =>
+      simp only [pure_bind]
+      exact (h2 x).mono (Nat.le_add_left _ _)
+  | query_bind t mx ih =>
+      rw [isTotalQueryBound_query_bind_iff] at h1
+      rw [bind_assoc, isTotalQueryBound_query_bind_iff]
+      refine ⟨Nat.add_pos_left h1.1 _, fun u => ?_⟩
+      have h3 := ih u (h1.2 u)
+      have heq : n₁ - 1 + n₂ = n₁ + n₂ - 1 := by omega
+      rw [heq] at h3
+      exact h3
+
+theorem IsTotalQueryBound.simulateQ_run_of_step {σ : Type u}
+    {impl : QueryImpl spec (StateT σ (OracleComp spec))}
+    {oa : OracleComp spec α} {n : ℕ}
+    (h : IsTotalQueryBound oa n)
+    (hstep : ∀ t : spec.Domain, ∀ s : σ, IsTotalQueryBound ((impl t).run s) 1)
+    (s : σ) :
+    IsTotalQueryBound ((simulateQ impl oa).run s) n := by
+  induction oa using OracleComp.inductionOn generalizing n s with
+  | pure x =>
+      simpa [simulateQ_pure] using
+        (show IsTotalQueryBound (pure (x, s) : OracleComp spec (α × σ)) n from trivial)
+  | query_bind t mx ih =>
+      rw [isTotalQueryBound_query_bind_iff] at h
+      rw [simulateQ_query_bind, StateT.run_bind]
+      have hstep' : IsTotalQueryBound
+          ((liftM (impl t) : StateT σ (OracleComp spec) (spec.Range t)).run s) 1 := by
+        simpa [OracleComp.liftM_run_StateT, MonadLift.monadLift] using hstep t s
+      have hrest : ∀ p : spec.Range t × σ,
+          IsTotalQueryBound ((simulateQ impl (mx p.1)).run p.2) (n - 1) :=
+        fun p => ih p.1 (h.2 p.1) p.2
+      have hn : 1 + (n - 1) = n := by omega
+      simpa [StateT.run_bind, hn] using isTotalQueryBound_bind hstep' hrest
+
 section IsPerIndexQueryBound
 
 variable [DecidableEq ι]

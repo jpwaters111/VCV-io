@@ -84,6 +84,32 @@ This means we need: for fixed s, Pr[any of A's ≤t queries has salt = s] ≤ t/
 ```
 Pr[hidingBad | s ← uniform S, run game with s] ≤ t/|S|
 ```
+
+## March 2026 checkpoint (current codebase)
+
+- We removed the temporary axiom-based shortcut used for `sum_probEvent_hidingBad_le`.
+- The theorem is now left as an explicit proof checkpoint (`sorry`) with the intended
+  four-step plan written next to the goal in `Examples/CommitmentSchemeRO.lean`.
+- Added caching-oracle helpers for deterministic cache-hit execution and cache
+  monotonicity extraction from support points:
+  - `cachingOracle.run_apply_hit`
+  - `cachingOracle.cache_le_of_mem_support_run_apply`
+- Added one-step counter arithmetic for the real hiding implementation:
+  - `hidingImpl₁_counter_le_succ`
+- Added a shared per-salt counted implementation and projection bridge:
+  - `hidingImplCountAll`
+  - `hidingImplCountAll_proj_eq_hidingImpl₁`
+  - `hidingRun_countAll_proj_eq_impl₁`
+- Added the probability-level bridge for bad events:
+  - `probEvent_hidingBad_eq_countAll`
+
+Recommended next mechanization step:
+1. Use `probEvent_hidingBad_eq_countAll` to rewrite the LHS of
+   `sum_probEvent_hidingBad_le` into shared-count events over `hidingImplCountAll`.
+2. Convert `Pr[hidingBad(s)]` into an indicator expectation for that statistic.
+3. Swap finite sums (`s` with support) and pointwise bound by total query count.
+4. Discharge with `IsTotalQueryBound` via counting-oracle support bounds.
+
 Then the existing `hiding_bound` theorem can average over s.
 
 **Potential VCV-io tactics**:

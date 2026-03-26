@@ -15,13 +15,6 @@ Assuming Lean 4 and lake are already installed, the project can be built by just
 lake exe cache get && lake build
 ```
 
-For a Codex-oriented bootstrap that also installs `elan` if needed, syncs submodules, fetches the
-Mathlib cache, builds the repo, and checks [`VCVio.lean`](VCVio.lean), run:
-
-```bash
-./scripts/setup-codex.sh
-```
-
 Mathematical foundations such as probability theory, computational complexity, and algebraic structures are based on or written to the Mathlib project (see [MATHLIB4](REFERENCES.md#mathlib4)), making all of that library usable in constructions and proofs.
 
 Generally the project aims to enable proof complexity comparable to that found in Mathlib.

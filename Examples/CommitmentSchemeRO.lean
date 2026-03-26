@@ -4,6 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: jpwaters
 -/
 import VCVio.OracleComp.EvalDist
+import VCVio.OracleComp.Coercions.Add
+import VCVio.OracleComp.SimSemantics.Append
 import VCVio.OracleComp.QueryTracking.CachingOracle
 import VCVio.OracleComp.QueryTracking.LoggingOracle
 import VCVio.OracleComp.QueryTracking.QueryBound
@@ -196,37 +198,6 @@ private lemma binding_win_implies_collision {t : ℕ} (A : BindingAdversary M S 
     hcache_mono hcache₂
   exact ⟨(m₀, s₀), (m₁, s₁), c₀, c₁, hpair_ne, hcache₃_m₀, hcache₃,
     heq_of_eq (by rw [hc₀, hc₁])⟩
-
-/-- Monotonicity for `IsTotalQueryBound`. -/
-private lemma isTotalQueryBound_mono {α₀ : Type}
-    {oa : OracleComp (CMOracle M S C) α₀} {m₁ m₂ : ℕ}
-    (h : IsTotalQueryBound oa m₁) (hle : m₁ ≤ m₂) :
-    IsTotalQueryBound oa m₂ := by
-  induction oa using OracleComp.inductionOn generalizing m₁ m₂ with
-  | pure _ => exact trivial
-  | query_bind t mx ih =>
-    rw [isTotalQueryBound_query_bind_iff] at h ⊢
-    exact ⟨Nat.lt_of_lt_of_le h.1 hle,
-      fun u => ih u (h.2 u) (Nat.sub_le_sub_right hle 1)⟩
-
-/-- Bind composition for `IsTotalQueryBound`. -/
-private lemma isTotalQueryBound_bind {α₀ β₀ : Type}
-    {oa : OracleComp (CMOracle M S C) α₀}
-    {ob : α₀ → OracleComp (CMOracle M S C) β₀}
-    {n₁ n₂ : ℕ}
-    (h1 : IsTotalQueryBound oa n₁) (h2 : ∀ x, IsTotalQueryBound (ob x) n₂) :
-    IsTotalQueryBound (oa >>= ob) (n₁ + n₂) := by
-  induction oa using OracleComp.inductionOn generalizing n₁ with
-  | pure x =>
-    simp only [pure_bind]
-    exact isTotalQueryBound_mono (h2 x) (Nat.le_add_left n₂ n₁)
-  | query_bind t mx ih =>
-    rw [isTotalQueryBound_query_bind_iff] at h1
-    rw [bind_assoc, isTotalQueryBound_query_bind_iff]
-    refine ⟨Nat.add_pos_left h1.1 n₂, fun u => ?_⟩
-    have h3 := ih u (h1.2 u)
-    have heq : n₁ - 1 + n₂ = n₁ + n₂ - 1 := by omega
-    rw [heq] at h3; exact h3
 
 /-- `IsTotalQueryBound` for the binding game's inner computation: `t + 2`
 (adversary's `t` queries + 2 verification queries). -/
@@ -692,15 +663,28 @@ private lemma extractabilityInner_totalBound {t : ℕ}
   -- Step 2: A.open_ aux has bound t₂ for all aux
   -- Step 3: query (m, s) >>= pure (...) has bound 1
   -- Combine via isTotalQueryBound_bind
-  apply isTotalQueryBound_mono (m₁ := A.t₁ + (A.t₂ + 1))
-  · apply isTotalQueryBound_bind h1
+  have hbind :
+      IsTotalQueryBound
+        (((simulateQ loggingOracle A.commit).run) >>= fun
+          | ((cm, aux), tr) =>
+              A.open_ aux >>= fun (m, s) =>
+                query (spec := CMOracle M S C) (m, s) >>= fun c =>
+                  have extracted : Option (M × S) := CMExtract cm tr
+                  pure
+                    (match extracted with
+                    | some (m', s') => c == cm && decide ((m', s') ≠ (m, s))
+                    | none => c == cm))
+        (A.t₁ + (A.t₂ + 1)) := by
+    apply isTotalQueryBound_bind h1
     intro ⟨⟨cm, aux⟩, tr⟩
     apply isTotalQueryBound_bind (A.openBound aux)
     intro ⟨m, s⟩
     show IsTotalQueryBound _ 1
     rw [isTotalQueryBound_query_bind_iff]
     exact ⟨Nat.one_pos, fun _ => trivial⟩
-  · have := A.totalBound; omega
+  exact hbind.mono (by
+    have := A.totalBound
+    omega)
 
 /-- The tagged inner computation has the same query bound as the untagged one. -/
 private lemma extractabilityInner_tagged_totalBound {t : ℕ}
@@ -823,12 +807,20 @@ private lemma extractability_noneWin_le_inv_card {t : ℕ}
                 (A.open_ aux >>= fun (m, s) =>
                   (query (spec := CMOracle M S C) (m, s)) >>= fun c =>
                     pure ((c == cm), true)) (t + 1) := by
-              apply isTotalQueryBound_mono (m₁ := A.t₂ + 1)
-              · apply isTotalQueryBound_bind (A.openBound aux)
-                intro ⟨m, s⟩; show IsTotalQueryBound _ 1
+              have hbind :
+                  IsTotalQueryBound
+                    (A.open_ aux >>= fun (m, s) =>
+                      (query (spec := CMOracle M S C) (m, s)) >>= fun c =>
+                        pure ((c == cm), true))
+                    (A.t₂ + 1) := by
+                apply isTotalQueryBound_bind (A.openBound aux)
+                intro ⟨m, s⟩
+                show IsTotalQueryBound _ 1
                 rw [isTotalQueryBound_query_bind_iff]
                 exact ⟨Nat.one_pos, fun _ => trivial⟩
-              · have := A.totalBound; omega
+              exact hbind.mono (by
+                have := A.totalBound
+                omega)
             calc Pr[fun z => z.1.1 = true ∧ z.1.2 = true |
                     (simulateQ cachingOracle (A.open_ aux >>= fun (m, s) =>
                       query (spec := CMOracle M S C) (m, s) >>= fun c =>
@@ -1182,18 +1174,25 @@ because the redirect condition in impl₂ requires `saltCount ≥ 2`.
 **Note on the `Pr[bad]` bound**: `Pr[bad]` = `Pr[saltCount ≥ 2 at end]`
 = `Pr[∃ adversary query with salt = s]` ≤ `t / |S|`. -/
 
-/-- A hiding adversary with two phases and query bound `t`. -/
+/-- A hiding adversary with two phases and total adversary query budget `t`.
+
+The computation includes one additional challenge query between the phases, so
+the full two-phase game computation has total bound `t + 1`. -/
 structure HidingAdversary (M : Type) (S : Type) (C : Type) (AUX : Type) (t : ℕ)
     [DecidableEq M] [DecidableEq S] where
   /-- Phase 1: choose a message and auxiliary state (with oracle access). -/
   choose : OracleComp (CMOracle M S C) (M × AUX)
   /-- Phase 2: given auxiliary state and a commitment, output a guess bit. -/
   distinguish : AUX → C → OracleComp (CMOracle M S C) Bool
-  /-- Query bound for the choose phase (total queries). -/
-  chooseBound : IsTotalQueryBound choose t
-  /-- Query bound for the distinguish phase (total queries). -/
-  distinguishBound : ∀ (aux : AUX) (cm : C),
-    IsTotalQueryBound (distinguish aux cm) t
+  /-- Total query bound for the full two-phase game computation, including the
+  single challenge query between the phases. Equivalently, the adversary itself
+  makes at most `t` oracle queries across both phases. -/
+  totalBound : ∀ s : S, IsTotalQueryBound
+    (choose >>= fun x =>
+      let (m, aux) := x
+      (liftM (query (spec := CMOracle M S C) (m, s)) >>= fun cm =>
+        distinguish aux cm))
+    (t + 1)
 
 /-- The real hiding game, parametrized by salt `s`.
 
@@ -1245,6 +1244,94 @@ def hidingImpl₁ (s : S) :
       let cnt' := if ms.2 == s then cnt + 1 else cnt
       set (cache.cacheQuery ms u, cnt')
       return u
+
+/-- Shared counted hiding implementation: same cache semantics as `cachingOracle`,
+with a per-salt miss counter `S → ℕ` updated at the queried salt on cache miss. -/
+def hidingImplCountAll :
+    QueryImpl (CMOracle M S C)
+      (StateT (QueryCache (CMOracle M S C) × (S → ℕ)) (OracleComp (CMOracle M S C))) :=
+  fun (ms : M × S) => do
+    let (cache, counts) ← get
+    match cache ms with
+    | some u => return u
+    | none => do
+      let u ← (liftM (query (spec := CMOracle M S C) ms) :
+        StateT (QueryCache (CMOracle M S C) × (S → ℕ)) (OracleComp (CMOracle M S C)) C)
+      let counts' := Function.update counts ms.2 (counts ms.2 + 1)
+      set (cache.cacheQuery ms u, counts')
+      return u
+
+private lemma hidingImpl₁_step_totalBound (s : S) (ms : M × S)
+    (st : QueryCache (CMOracle M S C) × ℕ) :
+    IsTotalQueryBound ((hidingImpl₁ s ms).run st) 1 := by
+  obtain ⟨cache, cnt⟩ := st
+  cases hcache : cache ms with
+  | some u =>
+      simpa [hidingImpl₁, hcache, StateT.run_bind, StateT.run_get, pure_bind] using
+        (show IsTotalQueryBound
+            (pure (u, (cache, cnt)) :
+              OracleComp (CMOracle M S C) (C × (QueryCache (CMOracle M S C) × ℕ))) 1 from
+          trivial)
+  | none =>
+      simpa [hidingImpl₁, hcache, StateT.run_bind, StateT.run_get, pure_bind,
+        StateT.run_set, StateT.run_pure, OracleComp.liftM_run_StateT, MonadLift.monadLift]
+        using
+          (show IsTotalQueryBound
+              (((liftM (query (spec := CMOracle M S C) ms) :
+                  OracleComp (CMOracle M S C) C) >>= fun u =>
+                pure (u, (cache.cacheQuery ms u,
+                  if ms.2 == s then cnt + 1 else cnt))))
+              1 from by
+            rw [isTotalQueryBound_query_bind_iff]
+            exact ⟨Nat.one_pos, fun _ => trivial⟩)
+
+private lemma hidingImplCountAll_step_totalBound (ms : M × S)
+    (st : QueryCache (CMOracle M S C) × (S → ℕ)) :
+    IsTotalQueryBound ((hidingImplCountAll (M := M) (S := S) (C := C) ms).run st) 1 := by
+  obtain ⟨cache, counts⟩ := st
+  cases hcache : cache ms with
+  | some u =>
+      simpa [hidingImplCountAll, hcache, StateT.run_bind, StateT.run_get, pure_bind] using
+        (show IsTotalQueryBound
+            (pure (u, (cache, counts)) :
+              OracleComp (CMOracle M S C)
+                (C × (QueryCache (CMOracle M S C) × (S → ℕ)))) 1 from
+          trivial)
+  | none =>
+      simpa [hidingImplCountAll, hcache, StateT.run_bind, StateT.run_get, pure_bind,
+        StateT.run_set, StateT.run_pure, OracleComp.liftM_run_StateT, MonadLift.monadLift]
+        using
+          (show IsTotalQueryBound
+              (((liftM (query (spec := CMOracle M S C) ms) :
+                  OracleComp (CMOracle M S C) C) >>= fun u =>
+                pure (u, (cache.cacheQuery ms u,
+                  Function.update counts ms.2 (counts ms.2 + 1)))))
+              1 from by
+            rw [isTotalQueryBound_query_bind_iff]
+            exact ⟨Nat.one_pos, fun _ => trivial⟩)
+
+/-- Single-step projection: projecting `hidingImplCountAll` to one salt counter
+recovers `hidingImpl₁ s`. -/
+theorem hidingImplCountAll_proj_eq_hidingImpl₁
+    (s : S) (ms : M × S)
+    (st : QueryCache (CMOracle M S C) × (S → ℕ)) :
+    Prod.map id (fun st => (st.1, st.2 s)) <$>
+        (hidingImplCountAll (M := M) (S := S) (C := C) ms).run st =
+      (hidingImpl₁ (M := M) (S := S) (C := C) s ms).run (st.1, st.2 s) := by
+  obtain ⟨cache, counts⟩ := st
+  cases hcache : cache ms with
+  | some u =>
+      simp [hidingImplCountAll, hidingImpl₁, hcache, StateT.run_bind, StateT.run_get,
+        pure_bind]
+  | none =>
+      simp [hidingImplCountAll, hidingImpl₁, hcache, StateT.run_bind, StateT.run_get,
+        pure_bind, StateT.run_set, StateT.run_pure, Function.update, Prod.map]
+      congr
+      funext a
+      by_cases h : ms.2 = s
+      · simp [h, eq_comm]
+      · have hs : ¬ s = ms.2 := by simpa [eq_comm] using h
+        simp [h, hs, eq_comm]
 
 /-- Intermediate oracle implementation for the hiding game.
 Same as `hidingImpl₁`, except when `cnt ≥ 2` (bad) and cache miss with salt `s`,
@@ -1299,6 +1386,340 @@ def hidingOa {AUX : Type} {t : ℕ} (A : HidingAdversary M S C AUX t) (s : S) :
   let cm ← query (spec := CMOracle M S C) (m, s)
   A.distinguish aux cm
 
+/-- Total query bound for the full two-phase hiding computation, matching the
+textbook's bounded-query setting: `t` adversary queries plus one challenge
+query. -/
+private lemma hidingOa_totalBound_current {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    IsTotalQueryBound (hidingOa A s) (t + 1) := by
+  simpa [hidingOa] using A.totalBound s
+
+private lemma hidingImpl₁_run_totalBound_current {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    IsTotalQueryBound
+      ((simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0))
+      (t + 1) := by
+  exact (hidingOa_totalBound_current A s).simulateQ_run_of_step
+    (fun ms st => hidingImpl₁_step_totalBound s ms st) (∅, 0)
+
+private lemma hidingImplCountAll_run_totalBound_current {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    IsTotalQueryBound
+      ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+      (t + 1) := by
+  exact (hidingOa_totalBound_current A s).simulateQ_run_of_step
+    (fun ms st => hidingImplCountAll_step_totalBound ms st) (∅, fun _ => 0)
+
+/-- Run-level projection: for any fixed `s`, the shared counted implementation
+projects to the `hidingImpl₁ s` execution on `hidingOa`. -/
+theorem hidingRun_countAll_proj_eq_impl₁ {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    (simulateQ hidingImplCountAll (hidingOa A s)).run' (∅, fun _ => 0) =
+      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run' (∅, 0) := by
+  simpa [StateT.run'] using
+    (OracleComp.ProgramLogic.Relational.run'_simulateQ_eq_of_query_map_eq'
+      hidingImplCountAll (hidingImpl₁ s) (fun st => (st.1, st.2 s))
+      (fun ms st => by
+        simpa [Prod.map] using hidingImplCountAll_proj_eq_hidingImpl₁
+          (M := M) (S := S) (C := C) s ms st)
+      (hidingOa A s) (∅, fun _ => 0))
+
+/-- Probability bridge for bad events:
+`Pr[bad]` under `hidingImpl₁ s` is equal to the corresponding event on the
+shared counted run, projected at `s`. -/
+theorem probEvent_hidingBad_eq_countAll {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S) :
+    Pr[hidingBad ∘ Prod.snd |
+      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)] =
+    Pr[fun z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ)) => 2 ≤ z.2.2 s |
+      (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+  have hrun :
+      Prod.map id (fun st : QueryCache (CMOracle M S C) × (S → ℕ) => (st.1, st.2 s)) <$>
+          (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0) =
+        (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0) := by
+    simpa using
+      (OracleComp.ProgramLogic.Relational.map_run_simulateQ_eq_of_query_map_eq'
+        hidingImplCountAll (hidingImpl₁ s) (fun st => (st.1, st.2 s))
+        (fun ms st => by
+          simpa [Prod.map] using hidingImplCountAll_proj_eq_hidingImpl₁
+            (M := M) (S := S) (C := C) s ms st)
+        (hidingOa A s) (∅, fun _ => 0))
+  rw [← hrun]
+  rw [probEvent_map]
+  rfl
+
+/-- If a counted step updates salt `s`, the total count increases by at most one. -/
+private lemma sum_update_succ_count (counts : S → ℕ) (s : S) :
+    ∑ s' : S, Function.update counts s (counts s + 1) s' =
+      (∑ s' : S, counts s') + 1 := by
+  classical
+  calc
+    ∑ s' : S, Function.update counts s (counts s + 1) s' =
+        Function.update counts s (counts s + 1) s +
+          Finset.sum (Finset.univ.erase s)
+            (fun s' : S => Function.update counts s (counts s + 1) s') := by
+          symm
+          exact Finset.univ.add_sum_erase
+            (f := fun s' : S => Function.update counts s (counts s + 1) s') (Finset.mem_univ s)
+    _ = counts s + 1 + Finset.sum (Finset.univ.erase s) (fun s' : S => counts s') := by
+          simp only [Function.update_self]
+          congr 1
+          refine Finset.sum_congr rfl ?_
+          intro s' hs'
+          rw [Function.update_of_ne (Finset.ne_of_mem_erase hs')]
+    _ = counts s + Finset.sum (Finset.univ.erase s) (fun s' : S => counts s') + 1 := by
+          omega
+    _ = (∑ s' : S, counts s') + 1 := by
+          rw [← Finset.univ.add_sum_erase (f := fun s' : S => counts s') (Finset.mem_univ s)]
+
+/-- One-step growth bound for the shared counted hiding implementation:
+the total count increases by at most one. -/
+private lemma sum_counts_step_le_succ_hidingImplCountAll (ms : M × S)
+    (st : QueryCache (CMOracle M S C) × (S → ℕ))
+    (x : C × (QueryCache (CMOracle M S C) × (S → ℕ)))
+    (hx : x ∈ support ((hidingImplCountAll (M := M) (S := S) (C := C) ms).run st)) :
+    (∑ s' : S, x.2.2 s') ≤ (∑ s' : S, st.2 s') + 1 := by
+  obtain ⟨cache, counts⟩ := st
+  simp only [hidingImplCountAll, StateT.run_bind, StateT.run_get, pure_bind] at hx
+  cases hcache : cache ms with
+  | some u =>
+      simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]
+      exact Nat.le_succ _
+  | none =>
+      simp only [hcache, StateT.run_bind] at hx
+      rw [mem_support_bind_iff] at hx
+      obtain ⟨u, _, hx⟩ := hx
+      simp only [StateT.run_set, StateT.run_pure, pure_bind, support_pure,
+        Set.mem_singleton_iff] at hx
+      rw [hx]
+      simp [sum_update_succ_count]
+
+/-- A single counted query can only increase a fixed salt counter. -/
+private lemma count_mono_step_hidingImplCountAll (s : S) (ms : M × S)
+    (st : QueryCache (CMOracle M S C) × (S → ℕ))
+    (x : C × (QueryCache (CMOracle M S C) × (S → ℕ)))
+    (hx : x ∈ support ((hidingImplCountAll (M := M) (S := S) (C := C) ms).run st)) :
+    st.2 s ≤ x.2.2 s := by
+  obtain ⟨cache, counts⟩ := st
+  simp only [hidingImplCountAll, StateT.run_bind, StateT.run_get, pure_bind] at hx
+  cases hcache : cache ms with
+  | some u =>
+      simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]
+  | none =>
+      simp only [hcache, StateT.run_bind] at hx
+      rw [mem_support_bind_iff] at hx
+      obtain ⟨u, _, hx⟩ := hx
+      simp only [StateT.run_set, StateT.run_pure, pure_bind, support_pure,
+        Set.mem_singleton_iff] at hx
+      rw [hx]
+      by_cases hs : ms.2 = s
+      · subst hs
+        simp [Function.update]
+      · have hs' : s ≠ ms.2 := by
+          intro hEq
+          exact hs hEq.symm
+        simpa [Function.update_of_ne hs'] using (Nat.le_refl (counts s))
+
+/-- Any support point of a counted step caches the queried point with the returned value. -/
+private lemma self_mem_cache_of_mem_support_step_hidingImplCountAll (ms : M × S)
+    (st : QueryCache (CMOracle M S C) × (S → ℕ))
+    (x : C × (QueryCache (CMOracle M S C) × (S → ℕ)))
+    (hx : x ∈ support ((hidingImplCountAll (M := M) (S := S) (C := C) ms).run st)) :
+    x.2.1 ms = some x.1 := by
+  obtain ⟨cache, counts⟩ := st
+  simp only [hidingImplCountAll, StateT.run_bind, StateT.run_get, pure_bind] at hx
+  cases hcache : cache ms with
+  | some u =>
+      simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
+      subst hx
+      simpa [hcache]
+  | none =>
+      simp only [hcache, StateT.run_bind] at hx
+      rw [mem_support_bind_iff] at hx
+      obtain ⟨u, _, hx⟩ := hx
+      simp only [StateT.run_set, StateT.run_pure, pure_bind, support_pure,
+        Set.mem_singleton_iff] at hx
+      subst hx
+      simp
+
+/-- The counted hiding invariant: every cached salt has a positive counter. -/
+private def HidingCountInv (st : QueryCache (CMOracle M S C) × (S → ℕ)) : Prop :=
+  ∀ ms : M × S, ∀ u : C, st.1 ms = some u → 1 ≤ st.2 ms.2
+
+/-- The counted implementation preserves the hiding count invariant. -/
+private lemma hidingCountInv_step_hidingImplCountAll (ms₀ : M × S)
+    (st : QueryCache (CMOracle M S C) × (S → ℕ)) (hInv : HidingCountInv st)
+    (x : C × (QueryCache (CMOracle M S C) × (S → ℕ)))
+    (hx : x ∈ support ((hidingImplCountAll (M := M) (S := S) (C := C) ms₀).run st)) :
+    HidingCountInv x.2 := by
+  obtain ⟨cache, counts⟩ := st
+  simp only [hidingImplCountAll, StateT.run_bind, StateT.run_get, pure_bind] at hx
+  cases hcache : cache ms₀ with
+  | some u₀ =>
+      simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
+      subst hx
+      simpa using hInv
+  | none =>
+      simp only [hcache, StateT.run_bind] at hx
+      rw [mem_support_bind_iff] at hx
+      obtain ⟨u₀, _, hx⟩ := hx
+      simp only [StateT.run_set, StateT.run_pure, pure_bind, support_pure,
+        Set.mem_singleton_iff] at hx
+      subst hx
+      intro ms u hms
+      by_cases hEq : ms = ms₀
+      · subst hEq
+        simpa using Nat.succ_le_succ (Nat.zero_le (counts ms₀.2))
+      · have hcache_ms : cache ms = some u := by
+          simpa [QueryCache.cacheQuery, Function.update, hEq] using hms
+        have h_old : 1 ≤ counts ms.2 := hInv ms u hcache_ms
+        have h_mono : counts ms.2 ≤ Function.update counts ms₀.2 (counts ms₀.2 + 1) ms.2 := by
+          by_cases hs : ms.2 = ms₀.2
+          · rw [hs]
+            simpa [Function.update_self] using Nat.le_succ (counts ms₀.2)
+          · simpa [Function.update_of_ne hs] using (Nat.le_refl (counts ms.2))
+        exact le_trans h_old h_mono
+
+/-- Support points of `simulateQ hidingImplCountAll` have coordinatewise monotone counts. -/
+private lemma count_mono_of_mem_support_run_hidingImplCountAll {α : Type}
+    (oa : OracleComp (CMOracle M S C) α)
+    (st₀ : QueryCache (CMOracle M S C) × (S → ℕ))
+    (z : α × (QueryCache (CMOracle M S C) × (S → ℕ)))
+    (hz : z ∈ support ((simulateQ hidingImplCountAll oa).run st₀))
+    (s : S) :
+    st₀.2 s ≤ z.2.2 s := by
+  suffices h : ∀ {β : Type} (ob : OracleComp (CMOracle M S C) β)
+      (st : QueryCache (CMOracle M S C) × (S → ℕ))
+      (y : β × (QueryCache (CMOracle M S C) × (S → ℕ))),
+      y ∈ support ((simulateQ hidingImplCountAll ob).run st) →
+      ∀ s' : S, st.2 s' ≤ y.2.2 s' by
+    exact h oa st₀ z hz s
+  intro β ob
+  induction ob using OracleComp.inductionOn with
+  | pure x =>
+      intro st y hy s'
+      simp [simulateQ_pure] at hy
+      subst y
+      exact Nat.le_refl _
+  | query_bind t mx ih =>
+      intro st y hy s'
+      rw [simulateQ_query_bind, StateT.run_bind] at hy
+      rw [support_bind] at hy
+      simp only [Set.mem_iUnion] at hy
+      obtain ⟨qu, hqu, hy'⟩ := hy
+      exact le_trans
+        (count_mono_step_hidingImplCountAll (M := M) (S := S) (C := C) s' t st qu hqu)
+        (ih qu.1 qu.2 y hy' s')
+
+/-- Every cached salt has a positive counter along the support of the counted run. -/
+private lemma hidingCountInv_of_mem_support_run_hidingImplCountAll {α : Type}
+    (oa : OracleComp (CMOracle M S C) α)
+    (st₀ : QueryCache (CMOracle M S C) × (S → ℕ))
+    (hInv : HidingCountInv st₀)
+    (z : α × (QueryCache (CMOracle M S C) × (S → ℕ)))
+    (hz : z ∈ support ((simulateQ hidingImplCountAll oa).run st₀)) :
+    HidingCountInv z.2 := by
+  suffices h : ∀ (β : Type) (ob : OracleComp (CMOracle M S C) β)
+      (st : QueryCache (CMOracle M S C) × (S → ℕ)),
+      HidingCountInv st →
+      ∀ y : β × (QueryCache (CMOracle M S C) × (S → ℕ)),
+        y ∈ support ((simulateQ hidingImplCountAll ob).run st) →
+        HidingCountInv y.2 from
+    h α oa st₀ hInv z hz
+  intro β ob
+  induction ob using OracleComp.inductionOn with
+  | pure x =>
+      intro st hInv y hy
+      simp [simulateQ_pure] at hy
+      subst hy
+      exact hInv
+  | query_bind t mx ih =>
+      intro st hInv y hy
+      rw [simulateQ_query_bind, StateT.run_bind] at hy
+      rw [support_bind] at hy
+      simp only [Set.mem_iUnion] at hy
+      obtain ⟨qu, hqu, hy'⟩ := hy
+      have hInv' :
+          HidingCountInv qu.2 :=
+        hidingCountInv_step_hidingImplCountAll (M := M) (S := S) (C := C) t st hInv qu hqu
+      exact ih qu.1 qu.2 hInv' y hy'
+
+/-- On the support of the counted hiding run, the total count is at most `n`
+plus the initial total count. -/
+private lemma sum_counts_le_of_mem_support_run_hidingImplCountAll
+    {α : Type} {oa : OracleComp (CMOracle M S C) α} {n : ℕ}
+    (hbound : IsTotalQueryBound oa n)
+    {st₀ : QueryCache (CMOracle M S C) × (S → ℕ)}
+    {z : α × (QueryCache (CMOracle M S C) × (S → ℕ))}
+    (hz : z ∈ support ((simulateQ hidingImplCountAll oa).run st₀)) :
+    (∑ s' : S, z.2.2 s') ≤ n + ∑ s' : S, st₀.2 s' := by
+  suffices h : ∀ {β : Type} (ob : OracleComp (CMOracle M S C) β)
+      (m : ℕ), IsTotalQueryBound ob m →
+      ∀ (st : QueryCache (CMOracle M S C) × (S → ℕ))
+        (y : β × (QueryCache (CMOracle M S C) × (S → ℕ))),
+        y ∈ support ((simulateQ hidingImplCountAll ob).run st) →
+        (∑ s' : S, y.2.2 s') ≤ m + ∑ s' : S, st.2 s' by
+    exact h oa n hbound st₀ z hz
+  intro β ob m hm st y hy
+  induction ob using OracleComp.inductionOn generalizing m st y with
+  | pure x =>
+      simp [simulateQ_pure] at hy
+      subst y
+      exact Nat.le_add_left _ _
+  | query_bind t mx ih =>
+      rw [isTotalQueryBound_query_bind_iff] at hm
+      rw [simulateQ_query_bind, StateT.run_bind] at hy
+      rw [support_bind] at hy
+      simp only [Set.mem_iUnion] at hy
+      obtain ⟨qu, hqu, hy'⟩ := hy
+      have hstep :
+          (∑ s' : S, qu.2.2 s') ≤ (∑ s' : S, st.2 s') + 1 :=
+        sum_counts_step_le_succ_hidingImplCountAll (M := M) (S := S) (C := C) t st qu hqu
+      have hrest :
+          (∑ s' : S, y.2.2 s') ≤ (m - 1) + ∑ s' : S, qu.2.2 s' :=
+        (ih (u := qu.1) (m := m - 1) (hm.2 qu.1)) (st := qu.2) (y := y) hy'
+      omega
+
+/-- On the support of the counted hiding run, the challenge salt count is positive. -/
+private theorem challenge_count_pos_of_mem_support_hidingImplCountAll
+    {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) (s : S)
+    {z : Bool × (QueryCache (CMOracle M S C) × (S → ℕ))}
+    (hz : z ∈ support ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))) :
+    1 ≤ z.2.2 s := by
+  have hInv0 : HidingCountInv (M := M) (S := S) (C := C)
+      ((∅ : QueryCache (CMOracle M S C)), fun _ : S => 0) := by
+    intro ms u h
+    simp at h
+  rw [hidingOa, simulateQ_bind, StateT.run_bind] at hz
+  rw [support_bind] at hz
+  simp only [Set.mem_iUnion] at hz
+  obtain ⟨qchoose, hchoose, hz⟩ := hz
+  rcases qchoose with ⟨⟨m, aux⟩, st₁⟩
+  have hInv₁ : HidingCountInv st₁ :=
+    hidingCountInv_of_mem_support_run_hidingImplCountAll
+      (M := M) (S := S) (C := C) (oa := A.choose)
+      (st₀ := ((∅ : QueryCache (CMOracle M S C)), fun _ : S => 0))
+      (hInv := hInv0) (z := ((m, aux), st₁)) hchoose
+  rw [simulateQ_query_bind, StateT.run_bind] at hz
+  rw [support_bind] at hz
+  simp only [Set.mem_iUnion] at hz
+  obtain ⟨qch, hch, hz'⟩ := hz
+  have hInv₂ : HidingCountInv qch.2 :=
+    hidingCountInv_step_hidingImplCountAll
+      (M := M) (S := S) (C := C) (m, s) st₁ hInv₁ qch hch
+  have hcache₂ : qch.2.1 (m, s) = some qch.1 :=
+    self_mem_cache_of_mem_support_step_hidingImplCountAll
+      (M := M) (S := S) (C := C) (m, s) st₁ qch hch
+  have hqch_pos : 1 ≤ qch.2.2 s :=
+    hInv₂ (m, s) qch.1 hcache₂
+  exact le_trans hqch_pos
+    (count_mono_of_mem_support_run_hidingImplCountAll
+      (M := M) (S := S) (C := C) (oa := A.distinguish aux qch.1)
+      (st₀ := qch.2) (z := z) hz' s)
+
 /-- The simulated hiding game, parametrized by salt `s`.
 
 The adversary runs `hidingOa A s` (which includes the challenge query `(m, s)`)
@@ -1313,6 +1734,153 @@ the distance between `hidingReal` and `hidingSim`. -/
 def hidingSim {AUX : Type} {t : ℕ} (A : HidingAdversary M S C AUX t) (s : S) :
     OracleComp (CMOracle M S C) Bool :=
   (simulateQ (hidingImplSim s) (hidingOa A s)).run' (∅, 0)
+
+private abbrev HidingCountState (M : Type) (S : Type) (C : Type) :=
+  QueryCache (CMOracle M S C) × (S → ℕ)
+
+private abbrev HidingAvgSpec (M : Type) (S : Type) (C : Type) :=
+  (Unit →ₒ S) + CMOracle M S C
+
+private abbrev hidingAvgLeftImpl :
+    QueryImpl (Unit →ₒ S)
+      (StateT (HidingCountState M S C) (OracleComp (HidingAvgSpec M S C))) :=
+  (QueryImpl.ofLift (Unit →ₒ S) (OracleComp (HidingAvgSpec M S C))).liftTarget
+    (StateT (HidingCountState M S C) (OracleComp (HidingAvgSpec M S C)))
+
+private abbrev hidingAvgRightImpl :
+    QueryImpl (CMOracle M S C)
+      (StateT (HidingCountState M S C) (OracleComp (HidingAvgSpec M S C))) :=
+  fun t =>
+    StateT.mk fun st =>
+      OracleComp.liftComp
+        ((hidingImplCountAll (M := M) (S := S) (C := C) t).run st)
+        (HidingAvgSpec M S C)
+
+private def hidingAvgQueryImpl :
+    QueryImpl (HidingAvgSpec M S C)
+      (StateT (HidingCountState M S C) (OracleComp (HidingAvgSpec M S C))) :=
+  hidingAvgLeftImpl (M := M) (S := S) (C := C) +
+    hidingAvgRightImpl (M := M) (S := S) (C := C)
+
+private def hidingAvgComp {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    OracleComp (HidingAvgSpec M S C) (S × Bool) := do
+  let s ← query (spec := HidingAvgSpec M S C) (Sum.inl ())
+  let b ← OracleComp.liftComp (hidingOa A s) (HidingAvgSpec M S C)
+  pure (s, b)
+
+private lemma run_simulateQ_hidingAvgRightImpl_eq_liftComp {α : Type}
+    (oa : OracleComp (CMOracle M S C) α)
+    (st : HidingCountState M S C) :
+    (simulateQ hidingAvgRightImpl oa).run st =
+      OracleComp.liftComp ((simulateQ hidingImplCountAll oa).run st) (HidingAvgSpec M S C) := by
+  induction oa using OracleComp.inductionOn generalizing st with
+  | pure x =>
+      simp [simulateQ_pure]
+  | query_bind t mx ih =>
+      rw [simulateQ_query_bind, StateT.run_bind, simulateQ_query_bind, StateT.run_bind,
+        OracleComp.liftComp_bind]
+      have hstep :
+          (hidingAvgRightImpl (M := M) (S := S) (C := C) t).run st =
+            OracleComp.liftComp
+              ((hidingImplCountAll (M := M) (S := S) (C := C) t).run st)
+              (HidingAvgSpec M S C) := by
+        change
+          (StateT.mk (fun s =>
+            OracleComp.liftComp
+              ((hidingImplCountAll (M := M) (S := S) (C := C) t).run s)
+              (HidingAvgSpec M S C))).run st =
+            OracleComp.liftComp
+              ((hidingImplCountAll (M := M) (S := S) (C := C) t).run st)
+              (HidingAvgSpec M S C)
+        rfl
+      exact OracleComp.bind_congr' hstep (fun p => by
+        simpa using ih p.1 p.2)
+
+/-- Averaged-mass bridge for hiding.
+
+This packages the per-salt bad probabilities into the shared `hidingAvgComp`
+run, where the salt is sampled once up front and then the shared count-all
+simulation is reused for the rest of the game. -/
+theorem sum_probEvent_hidingBad_eq_avg_bad_mass {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    (∑ s : S, Pr[hidingBad ∘ Prod.snd |
+      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)]) =
+    (Fintype.card S : ℝ≥0∞) *
+      Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
+        (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] := by
+  classical
+  have hrun :
+      (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0) =
+        (do
+          let s ← OracleComp.liftComp
+            ((query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S))
+            (HidingAvgSpec M S C)
+          Prod.map (fun b => (s, b)) id <$>
+            OracleComp.liftComp
+              ((simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0))
+              (HidingAvgSpec M S C)) := by
+    simp [hidingAvgComp, hidingAvgQueryImpl, hidingAvgLeftImpl,
+      simulateQ_bind, simulateQ_query, StateT.run_bind, QueryImpl.add_apply_inl,
+      QueryImpl.add_apply_inr, QueryImpl.liftTarget_apply, QueryImpl.ofLift_apply,
+      map_eq_bind_pure_comp, bind_assoc, run_simulateQ_hidingAvgRightImpl_eq_liftComp]
+  have hprob :
+      Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
+        (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] =
+      ∑' s : S, Pr[= s | (query (spec := Unit →ₒ S) () : OracleComp (Unit →ₒ S) S)] *
+        Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+          (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+    rw [hrun, probEvent_bind_eq_tsum]
+    refine tsum_congr fun s => ?_
+    simp_rw [probEvent_map, probEvent_liftComp, probOutput_liftComp]
+    rfl
+  calc
+    (∑ s : S, Pr[hidingBad ∘ Prod.snd |
+      (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)])
+        =
+      ∑ s : S, Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+        (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+          refine Finset.sum_congr rfl ?_
+          intro s _
+          simpa using probEvent_hidingBad_eq_countAll
+            (M := M) (S := S) (C := C) (A := A) s
+    _ = ∑' s : S, Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+        (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+          rw [tsum_fintype]
+    _ =
+      (Fintype.card S : ℝ≥0∞) *
+        Pr[fun z : ((S × Bool) × HidingCountState M S C) => 2 ≤ z.2.2 z.1.1 |
+          (simulateQ hidingAvgQueryImpl (hidingAvgComp A)).run (∅, fun _ => 0)] := by
+            rw [hprob]
+            let hS : ℝ≥0∞ := Fintype.card S
+            have hS0 : hS ≠ 0 := by simp [hS]
+            have hStop : hS ≠ ∞ := by simp [hS]
+            simp_rw [probOutput_query]
+            calc
+              ∑' s : S, Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] =
+                  ∑' s : S, hS * (hS⁻¹ *
+                    Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+                      (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)]) := by
+                        refine tsum_congr fun s => ?_
+                        calc
+                          Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+                              (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] =
+                              1 * Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+                                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+                                  rw [one_mul]
+                          _ =
+                              (hS * hS⁻¹) * Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+                                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+                                  rw [ENNReal.mul_inv_cancel hS0 hStop]
+                          _ = hS * (hS⁻¹ *
+                              Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+                                (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)]) := by
+                                  rw [mul_assoc]
+              _ = hS * ∑' s : S, hS⁻¹ *
+                  Pr[fun z : Bool × HidingCountState M S C => 2 ≤ z.2.2 s |
+                    (simulateQ hidingImplCountAll (hidingOa A s)).run (∅, fun _ => 0)] := by
+                      rw [ENNReal.tsum_mul_left.symm]
 
 /-- The real hiding game is `simulateQ cachingOracle` applied to the shared computation. -/
 theorem hidingReal_eq {AUX : Type} {t : ℕ}
@@ -1373,6 +1941,30 @@ theorem hidingImpl₁_bad_mono (s : S) (ms : M × S)
   | some u =>
     simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
     rw [hx]; exact h
+  | none =>
+    simp only [hcache, StateT.run_bind] at hx
+    rw [mem_support_bind_iff] at hx
+    obtain ⟨u, _, hx⟩ := hx
+    simp only [StateT.run_set, StateT.run_pure, pure_bind,
+      support_pure, Set.mem_singleton_iff] at hx
+    rw [hx]
+    simp only [Prod.snd]
+    split <;> omega
+
+/-- One-step counter growth bound for `hidingImpl₁`:
+the salt counter is monotone and increases by at most one. -/
+theorem hidingImpl₁_counter_le_succ (s : S) (ms : M × S)
+    (st : QueryCache (CMOracle M S C) × ℕ)
+    (x : C × (QueryCache (CMOracle M S C) × ℕ))
+    (hx : x ∈ support ((hidingImpl₁ s ms).run st)) :
+    st.2 ≤ x.2.2 ∧ x.2.2 ≤ st.2 + 1 := by
+  obtain ⟨cache, cnt⟩ := st
+  simp only [hidingImpl₁, StateT.run_bind, StateT.run_get, pure_bind] at hx
+  cases hcache : cache ms with
+  | some u =>
+    simp only [hcache, StateT.run_pure, support_pure, Set.mem_singleton_iff] at hx
+    rw [hx]
+    exact ⟨Nat.le_refl _, Nat.le_succ _⟩
   | none =>
     simp only [hcache, StateT.run_bind] at hx
     rw [mem_support_bind_iff] at hx
@@ -1528,43 +2120,30 @@ is the sum/average version below.
 **Proof strategy**: Swap the sum over `s` inside the probability, express
 `∑_s Pr[bad(s)]` as `𝔼[#{adversary queries with salt = s}]`, then use linearity
 of expectation and the per-query bound. -/
+-- Pointwise arithmetic helper: event indicator is bounded by a natural count.
+private theorem indicator_le_natCast_count (P : Prop) [Decidable P] (n : ℕ)
+    (h : P → 1 ≤ n) : (if P then (1 : ℝ≥0∞) else 0) ≤ n := by
+  by_cases hP : P
+  · simp [hP, h hP]
+  · simp [hP]
+
 theorem sum_probEvent_hidingBad_le {AUX : Type} {t : ℕ}
     (A : HidingAdversary M S C AUX t) :
     (∑ s : S, Pr[hidingBad ∘ Prod.snd |
       (simulateQ (hidingImpl₁ s) (hidingOa A s)).run (∅, 0)]) ≤ t := by
-  -- STATUS: sorry — requires per-query decomposition infrastructure not yet available.
+  classical
+  -- Strategy (textbook Claim cm-hiding-hit-query):
+  -- 1) rewrite each `Pr[bad(s)]` as an expectation of an indicator;
+  -- 2) swap finite sums (`s` and support points);
+  -- 3) bound `∑_s 𝟙[bad(s)]` pointwise by the total number of oracle queries;
+  -- 4) conclude with the total query budget `A.queryBound`.
   --
-  -- CORRECTNESS: The statement is true. Tight example: adversary queries t distinct
-  -- salts s₁, …, sₜ; then Pr[bad(sᵢ)] = 1 and Pr[bad(s)] = 0 for s ∉ {s₁,…,sₜ},
-  -- giving ∑_s Pr[bad(s)] = t.
-  --
-  -- PROOF SKETCH (textbook: Claim cm-hiding-hit-query):
-  -- Let counter_s = final counter value in game(s). Then:
-  --   1[bad(s)] = 1[counter_s ≥ 2] ≤ counter_s - 1  (since challenge gives counter_s ≥ 1)
-  -- So ∑_s Pr[bad(s)] ≤ ∑_s (E[counter_s] - 1).
-  --
-  -- counter_s = 1 (challenge) + #{adversary cache misses with salt = s in game(s)}.
-  -- Key independence: the adversary's query distribution is THE SAME in game(s) for
-  -- all s, because:
-  --   (a) A.choose does not receive s as input, so choose-phase queries are
-  --       independent of s entirely.
-  --   (b) A.distinguish receives cm = H(m, s), but under hidingImpl₁ this is a fresh
-  --       uniform value from C (cache miss on first salt-s query), independent of s.
-  --       So distinguish-phase queries have the same distribution for all s.
-  --
-  -- For any adversary query (m_i, s_i) with distribution independent of the game
-  -- parameter s: ∑_s 1[s_i = s] = 1. Taking expectations:
-  --   ∑_s Pr[query_i has salt = s in game(s)] = ∑_s Pr[salt_i = s] = 1.
-  -- Summing over ≤ t queries: ∑_s E[counter_s - 1] ≤ t.
-  --
-  -- FORMALIZATION BLOCKERS:
-  -- • Need to decompose `simulateQ hidingImpl₁ (hidingOa A s)` into per-query
-  --   contributions and reason about individual query salt distributions.
-  -- • Need to show the adversary's query distribution is independent of s
-  --   (the memoryless oracle argument for cm).
-  -- • Need sum-swap (Fubini) for `∑_s ∑_i` over finite probability measures.
-  -- • The `IsPerIndexQueryBound` infrastructure provides query COUNT bounds
-  --   but not per-query SALT DISTRIBUTION decomposition.
+  -- The infrastructure lemmas from `countingOracle` already provide the global
+  -- query-count bound; remaining work is a coupling that identifies the counter
+  -- in `hidingImpl₁ s` with per-salt miss counts in the shared cache process.
+  -- The new lemma `hidingImpl₁_counter_le_succ` gives the one-step arithmetic
+  -- needed by that coupling, and should be lifted to a run-level bound by
+  -- induction on the query trace generated by `simulateQ`.
   sorry
 
 /-- **Hiding theorem (Lemma cm-hiding, averaged version)**:

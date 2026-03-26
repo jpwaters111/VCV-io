@@ -1,5 +1,8 @@
 /.lake/
 .claude/
+setupscript.sh
+setup-codex.sh
+scripts/setup-codex.sh
 .DS_Store
 /.ignore/
 /.gauss/
