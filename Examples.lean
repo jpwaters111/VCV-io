@@ -1,4 +1,5 @@
 import Examples.BR93
+import Examples.CommitmentSchemeROTextbookAttempt
 import Examples.ProofLadders.ElGamal.Basic
 import Examples.ProofLadders.ElGamal.Common
 import Examples.ProofLadders.ElGamal.Hash

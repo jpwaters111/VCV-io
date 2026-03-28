@@ -1,0 +1,725 @@
+Examples/CommitmentSchemeRO.lean:120:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.bindingGame_eq`:
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:125:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.simulateQ_cachingOracle_query`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:132:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.cachingOracle_query_caches`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:205:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.bindingInner_totalBound`:
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:216:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.cache_lookup_eq_of_noCollision`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:258:4: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:276:16: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:226:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.probEvent_from_fresh_query_le_inv`:
+  [Fintype M]
+  [Fintype S]
+  [Inhabited M]
+  [Inhabited S]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype M] [Fintype S] [Inhabited M] [Inhabited S] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:423:10: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:533:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.extractabilityGame_eq`:
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:555:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.extractabilityInner_eq_fst_tagged`:
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:653:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.extractabilityInner_totalBound`:
+  [Fintype M]
+  [Fintype S]
+  [Inhabited M]
+  [Inhabited S]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype M] [Fintype S] [Inhabited M] [Inhabited S] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:879:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.add_div_two_card`:
+  [DecidableEq C]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:956:13: warning: This simp argument is unused:
+  StateT.run_pure
+
+Hint: Omit it from the simp argument list.
+  simp only [S̵t̵a̵t̵e̵T̵.̵r̵u̵n̵_̵p̵u̵r̵e̵,̵ ̵support_pure, Set.mem_singleton_iff] at hz
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:956:30: warning: This simp argument is unused:
+  support_pure
+
+Hint: Omit it from the simp argument list.
+  simp only [StateT.run_pure, s̵u̵p̵p̵o̵r̵t̵_̵p̵u̵r̵e̵,̵ ̵Set.mem_singleton_iff] at hz
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:956:44: warning: This simp argument is unused:
+  Set.mem_singleton_iff
+
+Hint: Omit it from the simp argument list.
+  simp only [StateT.run_pure, support_pure,̵ ̵S̵e̵t̵.̵m̵e̵m̵_̵s̵i̵n̵g̵l̵e̵t̵o̵n̵_̵i̵f̵f̵] at hz
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:1265:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.hidingImpl₁_step_totalBound`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1289:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.hidingImplCountAll_step_totalBound`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1316:0: warning: automatically included section variable(s) unused in theorem `hidingImplCountAll_proj_eq_hidingImpl₁`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1329:35: warning: This simp argument is unused:
+  StateT.run_pure
+
+Hint: Omit it from the simp argument list.
+  simp [hidingImplCountAll, hidingImpl₁, hcache, StateT.run_bind, StateT.run_get, pure_bind,
+  ̲  ̲ ̲ ̲ ̲ ̲ ̲ ̲StateT.run_set, S̵t̵a̵t̵e̵T̵.̵r̵u̵n̵_̵p̵u̵r̵e̵,̵ ̵Function.update, Prod.map]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:1333:17: warning: This simp argument is unused:
+  eq_comm
+
+Hint: Omit it from the simp argument list.
+  simp [h,̵ ̵e̵q̵_̵c̵o̵m̵m̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:1335:21: warning: This simp argument is unused:
+  eq_comm
+
+Hint: Omit it from the simp argument list.
+  simp [h, hs,̵ ̵e̵q̵_̵c̵o̵m̵m̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:1337:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.hidingImplCountAll_proj_eq_cachingOracle`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1350:68: warning: This simp argument is unused:
+  StateT.run_pure
+
+Hint: Omit it from the simp argument list.
+  simp [hidingImplCountAll, cachingOracle, QueryImpl.withCaching_apply, hcache, StateT.run_bind,
+  ̲  ̲ ̲ ̲ ̲ ̲ ̲ ̲StateT.run_get, pure_bind, StateT.run_set, S̵t̵a̵t̵e̵T̵.̵r̵u̵n̵_̵p̵u̵r̵e̵,̵StateT.run_modifyGet, Prod.map]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:1424:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.hidingOa_totalBound_current`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1429:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.hiding_choose_totalBound`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1441:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.hiding_distinguish_totalBound_of_choose_support`:
+  [DecidableEq C]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1551:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.sum_counts_step_le_succ_hidingImplCountAll`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1632:8: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:1608:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.count_mono_step_hidingImplCountAll`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1666:10: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:1669:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.count_coord_le_add_hit_of_mem_support_step_hidingImplCountAll`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1687:14: warning: This simp argument is unused:
+  Function.update_of_ne hs'
+
+Hint: Omit it from the simp argument list.
+  s̵i̵m̵p̵ ̵[̵F̵u̵n̵c̵t̵i̵o̵n̵.̵u̵p̵d̵a̵t̵e̵_̵o̵f̵_̵n̵e̵ ̵h̵s̵'̵,̵ ̵h̵s̵]̵s̲i̲m̲p̲ ̲[̲h̲s̲]̲
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:1729:6: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:1718:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.self_mem_cache_of_mem_support_step_hidingImplCountAll`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1766:8: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:1773:12: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:1774:12: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:1744:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.hidingCountInv_step_hidingImplCountAll`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:1897:46: warning: This simp argument is unused:
+  support_pure
+
+Hint: Omit it from the simp argument list.
+  simp only [StateT.run_set, StateT.run_pure, s̵u̵p̵p̵o̵r̵t̵_̵p̵u̵r̵e̵,̵ ̵Set.mem_singleton_iff] at hu
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:1897:60: warning: This simp argument is unused:
+  Set.mem_singleton_iff
+
+Hint: Omit it from the simp argument list.
+  simp only [StateT.run_set, StateT.run_pure, support_pure,̵ ̵S̵e̵t̵.̵m̵e̵m̵_̵s̵i̵n̵g̵l̵e̵t̵o̵n̵_̵i̵f̵f̵] at hu
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:2036:6: warning: Try `simp at hgt` instead of `simpa using hgt`
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:2071:14: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:2351:5: warning: unused variable `hqchoose`
+
+Note: This linter can be disabled with `set_option linter.unusedVariables false`
+Examples/CommitmentSchemeRO.lean:2395:5: warning: unused variable `hqchoose`
+
+Note: This linter can be disabled with `set_option linter.unusedVariables false`
+Examples/CommitmentSchemeRO.lean:2429:51: warning: This simp argument is unused:
+  hchoose
+
+Hint: Omit it from the simp argument list.
+  simp [OracleComp.ProgramLogic.propInd, hbad, hc̵h̵o̵o̵s̵e̵,̵ ̵h̵qzero, hinc]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:2667:18: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:2807:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.run_simulateQ_hidingAvgRightImpl_eq_liftComp`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:2898:6: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:2930:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.probEvent_hidingAvg_bad_le_wp_selectedCountPred`:
+  [DecidableEq C]
+  [Fintype M]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3014:0: warning: automatically included section variable(s) unused in theorem `hidingReal_eq`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3032:14: warning: This simp argument is unused:
+  hc
+
+Hint: Omit it from the simp argument list.
+  simp [h̵c̵,̵ ̵StateT.run_pure, Prod.map]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3034:19: warning: This simp argument is unused:
+  hc
+
+Hint: Omit it from the simp argument list.
+  simp only [h̵c̵,̵ ̵StateT.run_bind, OracleComp.liftM_run_StateT]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3035:42: warning: This simp argument is unused:
+  Prod.map
+
+Hint: Omit it from the simp argument list.
+  simp only [bind_assoc, pure_bind,̵ ̵P̵r̵o̵d̵.̵m̵a̵p̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3042:0: warning: automatically included section variable(s) unused in theorem `hidingImpl_agree`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3060:0: warning: automatically included section variable(s) unused in theorem `hidingImpl₁_bad_mono`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3079:15: warning: This simp argument is unused:
+  Prod.snd
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵P̵r̵o̵d̵.̵s̵n̵d̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3084:0: warning: automatically included section variable(s) unused in theorem `hidingImpl₁_counter_le_succ`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3103:15: warning: This simp argument is unused:
+  Prod.snd
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵P̵r̵o̵d̵.̵s̵n̵d̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3107:0: warning: automatically included section variable(s) unused in theorem `hidingImpl₂_bad_mono`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3126:15: warning: This simp argument is unused:
+  Prod.snd
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵P̵r̵o̵d̵.̵s̵n̵d̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3147:0: warning: automatically included section variable(s) unused in theorem `hidingImplSim_bad_mono`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3166:15: warning: This simp argument is unused:
+  Prod.snd
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵P̵r̵o̵d̵.̵s̵n̵d̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3178:0: warning: automatically included section variable(s) unused in theorem `hidingImpl_agree_dist`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3189:10: warning: This simp argument is unused:
+  hcache
+
+Hint: Omit it from the simp argument list.
+  simp ̵[̵h̵c̵a̵c̵h̵e̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3206:0: warning: automatically included section variable(s) unused in theorem `hidingSim_eq_implSim`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3258:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.wp_finset_sum`:
+  [DecidableEq M]
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Inhabited M]
+  [Inhabited S]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq M] [DecidableEq C] [Fintype M] [Fintype S] [Inhabited M] [Inhabited S] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3495:10: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:3834:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.sum_chooseHitIndicators_le_sumCounts`:
+  [DecidableEq S]
+  [Inhabited S]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq S] [Inhabited S] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3890:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.run_simulateQ_loggingOracle_query_bind`:
+  [DecidableEq M]
+  [DecidableEq S]
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq
+  M] [DecidableEq
+  S] [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:3898:31: warning: This simp argument is unused:
+  Function.comp
+
+Hint: Omit it from the simp argument list.
+  simp [loggingOracle, QueryImpl.withLogging, OracleQuery.cont_query, Prod.map, F̵u̵n̵c̵t̵i̵o̵n̵.̵i̵d̵_̵d̵e̵f̵,̵ ̵F̵u̵n̵c̵t̵i̵o̵n̵.̵c̵o̵m̵p̵]̵F̲u̲n̲c̲t̲i̲o̲n̲.̲i̲d̲_̲d̲e̲f̲]̲
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:3900:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.sum_querySaltCounts_eq_length`:
+  [DecidableEq M]
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq M] [DecidableEq C] [Fintype M] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:4225:16: warning: This simp argument is unused:
+  cachingOracle.apply_eq
+
+Hint: Omit it from the simp argument list.
+  simp [̵c̵a̵c̵h̵i̵n̵g̵O̵r̵a̵c̵l̵e̵.̵a̵p̵p̵l̵y̵_̵e̵q̵,̵ ̵h̵t̵,̵[̲h̲t̲,̲ StateT.run_bind, StateT.run_get, pure_bind]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:4228:16: warning: This simp argument is unused:
+  cachingOracle.apply_eq
+
+Hint: Omit it from the simp argument list.
+  simp [̵c̵a̵c̵h̵i̵n̵g̵O̵r̵a̵c̵l̵e̵.̵a̵p̵p̵l̵y̵_̵e̵q̵,̵ ̵h̵t̵,̵[̲h̲t̲,̲ StateT.run_bind, StateT.run_get, pure_bind, OracleComp.liftM_run_StateT,
+  ̲  ̲ ̲ ̲ ̲ ̲ ̲ ̲ ̲ ̲ ̲ ̲StateT.run_modifyGet, MonadLift.monadLift]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:4229:12: warning: This simp argument is unused:
+  OracleComp.liftM_run_StateT
+
+Hint: Omit it from the simp argument list.
+  simp [cachingOracle.apply_eq, ht, StateT.run_bind, StateT.run_get, pure_bind,
+              O̵r̵a̵c̵l̵e̵C̵o̵m̵p̵.̵l̵i̵f̵t̵M̵_̵r̵u̵n̵_̵S̵t̵a̵t̵e̵T̵,̵ ̵StateT.run_modifyGet, MonadLift.monadLift]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:4229:63: warning: This simp argument is unused:
+  MonadLift.monadLift
+
+Hint: Omit it from the simp argument list.
+  simp [cachingOracle.apply_eq, ht, StateT.run_bind, StateT.run_get, pure_bind,
+              OracleComp.liftM_run_StateT, StateT.run_modifyGet,̵ ̵M̵o̵n̵a̵d̵L̵i̵f̵t̵.̵m̵o̵n̵a̵d̵L̵i̵f̵t̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Examples/CommitmentSchemeRO.lean:4235:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.queryLog_countQ_pos_of_mem`:
+  [DecidableEq M]
+  [DecidableEq S]
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq
+  M] [DecidableEq
+  S] [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:4300:6: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:4349:46: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+Examples/CommitmentSchemeRO.lean:4352:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.cacheQuery_swap_of_ne`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Fintype C]
+  [Inhabited M]
+  [Inhabited S]
+  [Inhabited C]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:4368:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.wp_querySaltIndicator_prepend_eq_one`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Inhabited M]
+  [Inhabited S]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Inhabited M] [Inhabited S] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:4412:8: warning: automatically included section variable(s) unused in theorem `_private.Examples.CommitmentSchemeRO.0.wp_querySaltIndicator_prepend_eq_of_ne`:
+  [DecidableEq C]
+  [Fintype M]
+  [Fintype S]
+  [Inhabited M]
+  [Inhabited S]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq C] [Fintype M] [Fintype S] [Inhabited M] [Inhabited S] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+Examples/CommitmentSchemeRO.lean:4500:50: error: Tactic `rewrite` failed: Did not find an occurrence of the pattern
+  (simulateQ loggingOracle (liftM (query ?t) >>= ?mx)).run
+in the target expression
+  (ProgramLogic.wp
+      ((simulateQ cachingOracle do
+            let u ← liftM (query t)
+            (fun p => (p.1, ⟨t, u⟩ :: p.2)) <$> (simulateQ loggingOracle (mx u)).run).run
+        (cache₀.cacheQuery (m, s) cm))
+      fun z => ProgramLogic.propInd (0 < z.1.2.countQ fun t' => t'.2 = s)) =
+    ProgramLogic.wp
+      ((simulateQ cachingOracle do
+            let u ← liftM (query t)
+            (fun p => (p.1, ⟨t, u⟩ :: p.2)) <$> (simulateQ loggingOracle (mx u)).run).run
+        cache₀)
+      fun z => ProgramLogic.propInd (0 < z.1.2.countQ fun t' => t'.2 = s)
+
+case query_bind
+M S C : Type
+inst✝⁸ : DecidableEq M
+inst✝⁷ : DecidableEq S
+inst✝⁶ : DecidableEq C
+inst✝⁵ : Fintype M
+inst✝⁴ : Fintype S
+inst✝³ : Fintype C
+inst✝² : Inhabited M
+inst✝¹ : Inhabited S
+inst✝ : Inhabited C
+α : Type
+m : M
+s : S
+cm : C
+t : (CMOracle M S C).Domain
+mx : (CMOracle M S C).Range t → OracleComp (CMOracle M S C) α
+ih :
+  ∀ (u : (CMOracle M S C).Range t) (cache₀ : (CMOracle M S C).QueryCache),
+    cache₀ (m, s) = none →
+      (∀ (m' : M), m' ≠ m → cache₀ (m', s) = none) →
+        (ProgramLogic.wp
+            ((simulateQ cachingOracle (simulateQ loggingOracle (mx u)).run).run (cache₀.cacheQuery (m, s) cm)) fun z =>
+            ProgramLogic.propInd (0 < z.1.2.countQ fun t => t.2 = s)) =
+          ProgramLogic.wp ((simulateQ cachingOracle (simulateQ loggingOracle (mx u)).run).run cache₀) fun z =>
+            ProgramLogic.propInd (0 < z.1.2.countQ fun t => t.2 = s)
+cache₀ : (CMOracle M S C).QueryCache
+hself : cache₀ (m, s) = none
+hother : ∀ (m' : M), m' ≠ m → cache₀ (m', s) = none
+⊢ (ProgramLogic.wp
+      ((simulateQ cachingOracle do
+            let u ← liftM (query t)
+            (fun p => (p.1, ⟨t, u⟩ :: p.2)) <$> (simulateQ loggingOracle (mx u)).run).run
+        (cache₀.cacheQuery (m, s) cm))
+      fun z => ProgramLogic.propInd (0 < z.1.2.countQ fun t' => t'.2 = s)) =
+    ProgramLogic.wp
+      ((simulateQ cachingOracle do
+            let u ← liftM (query t)
+            (fun p => (p.1, ⟨t, u⟩ :: p.2)) <$> (simulateQ loggingOracle (mx u)).run).run
+        cache₀)
+      fun z => ProgramLogic.propInd (0 < z.1.2.countQ fun t' => t'.2 = s)
