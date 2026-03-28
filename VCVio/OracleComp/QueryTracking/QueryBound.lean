@@ -160,6 +160,54 @@ lemma isTotalQueryBound_bind {oa : OracleComp spec α} {ob : α → OracleComp s
       rw [heq] at h3
       exact h3
 
+lemma not_isTotalQueryBound_bind_query_prefix_zero
+    {oa : OracleComp spec α}
+    {next : α → spec.Domain}
+    {ob : ∀ x, spec.Range (next x) → OracleComp spec β} :
+    ¬ IsTotalQueryBound
+        (oa >>= fun x => (liftM (query (spec := spec) (next x)) >>= ob x))
+        0 := by
+  induction oa using OracleComp.inductionOn with
+  | pure x =>
+      rw [pure_bind, isTotalQueryBound_query_bind_iff]
+      simp
+  | query_bind t mx ih =>
+      rw [bind_assoc, isTotalQueryBound_query_bind_iff]
+      simp
+
+/-- If a computation is followed by a continuation that always starts with one query,
+then a bound on the whole computation by `n + 1` yields a bound on the prefix by `n`. -/
+lemma IsTotalQueryBound.of_bind_query_prefix [spec.Inhabited]
+    {oa : OracleComp spec α}
+    {next : α → spec.Domain}
+    {ob : ∀ x, spec.Range (next x) → OracleComp spec β}
+    {n : ℕ}
+    (h :
+      IsTotalQueryBound
+        (oa >>= fun x => (liftM (query (spec := spec) (next x)) >>= ob x))
+        (n + 1)) :
+    IsTotalQueryBound oa n := by
+  induction oa using OracleComp.inductionOn generalizing n with
+  | pure x =>
+      exact trivial
+  | query_bind t mx ih =>
+      rw [bind_assoc, isTotalQueryBound_query_bind_iff] at h
+      rw [isTotalQueryBound_query_bind_iff]
+      have hn0 : n ≠ 0 := by
+        intro hz
+        subst hz
+        exact not_isTotalQueryBound_bind_query_prefix_zero
+          (oa := mx default) (next := next) (ob := ob) (h.2 default)
+      have hn : 0 < n := Nat.pos_of_ne_zero hn0
+      refine ⟨hn, fun u => ?_⟩
+      have hn_succ : n = (n - 1) + 1 := by omega
+      have hu : IsTotalQueryBound
+          (mx u >>= fun x => (liftM (query (spec := spec) (next x)) >>= ob x))
+          ((n - 1) + 1) := by
+        rw [← hn_succ]
+        exact h.2 u
+      exact ih u (n := n - 1) hu
+
 theorem IsTotalQueryBound.simulateQ_run_of_step {σ : Type u}
     {impl : QueryImpl spec (StateT σ (OracleComp spec))}
     {oa : OracleComp spec α} {n : ℕ}
@@ -182,6 +230,114 @@ theorem IsTotalQueryBound.simulateQ_run_of_step {σ : Type u}
         fun p => ih p.1 (h.2 p.1) p.2
       have hn : 1 + (n - 1) = n := by omega
       simpa [StateT.run_bind, hn] using isTotalQueryBound_bind hstep' hrest
+
+section CountingResidual
+
+variable [DecidableEq ι] [Fintype ι]
+
+private lemma sum_update_pred {qc : ι → ℕ} {t : ι} (ht : 0 < qc t) :
+    ∑ i, Function.update qc t (qc t - 1) i = (∑ i, qc i) - 1 := by
+  have hsub : ∑ i, Function.update qc t (qc t - 1) i + 1 = (∑ i, qc i) := by
+    rw [← Finset.add_sum_erase Finset.univ (fun i => Function.update qc t (qc t - 1) i)
+      (Finset.mem_univ t)]
+    simp only [Function.update_self]
+    conv_rhs => rw [← Finset.add_sum_erase Finset.univ qc (Finset.mem_univ t)]
+    have herase : ∑ x ∈ Finset.univ.erase t,
+        Function.update qc t (qc t - 1) x = ∑ x ∈ Finset.univ.erase t, qc x := by
+      apply Finset.sum_congr rfl
+      intro i hi
+      rw [Function.update_of_ne (Finset.ne_of_mem_erase hi)]
+    rw [herase]
+    omega
+  omega
+
+/-- If `oa >>= ob` is totally query-bounded by `n`, then after any support point of the
+counting run of `oa`, the continuation `ob` is bounded by the residual budget. -/
+theorem IsTotalQueryBound.residual_of_mem_support_counting
+    {oa : OracleComp spec α} {ob : α → OracleComp spec β} {n : ℕ}
+    (h : IsTotalQueryBound (oa >>= ob) n)
+    {z : α × QueryCount ι}
+    (hz : z ∈ support (countingOracle.simulate oa 0)) :
+    IsTotalQueryBound (ob z.1) (n - ∑ i, z.2 i) := by
+  induction oa using OracleComp.inductionOn generalizing n z with
+  | pure x =>
+      rw [countingOracle.mem_support_simulate_pure_iff] at hz
+      subst z
+      simpa [pure_bind] using h
+  | query_bind t mx ih =>
+      rw [bind_assoc, isTotalQueryBound_query_bind_iff] at h
+      rw [countingOracle.mem_support_simulate_queryBind_iff] at hz
+      obtain ⟨hz0, u, hz'⟩ := hz
+      have hu :
+          IsTotalQueryBound (ob z.1)
+            ((n - 1) - ∑ i, (Function.update z.2 t (z.2 t - 1)) i) :=
+        ih u (h.2 u) hz'
+      have hsum : ∑ i, Function.update z.2 t (z.2 t - 1) i = (∑ i, z.2 i) - 1 := by
+        exact sum_update_pred (Nat.pos_of_ne_zero hz0)
+      rw [hsum] at hu
+      have hsum_pos : 0 < ∑ i, z.2 i := by
+        exact Nat.lt_of_lt_of_le (Nat.pos_of_ne_zero hz0)
+          (Finset.single_le_sum (fun _ _ => Nat.zero_le _) (Finset.mem_univ t))
+      have hbudget : (n - 1) - ((∑ i, z.2 i) - 1) = n - ∑ i, z.2 i := by
+        omega
+      simpa [hbudget] using hu
+
+/-- Any support point of the counting simulation of a totally query-bounded
+computation has total query count at most the structural bound. -/
+theorem IsTotalQueryBound.counting_total_le
+    {oa : OracleComp spec α} {n : ℕ}
+    (h : IsTotalQueryBound oa n)
+    {z : α × QueryCount ι}
+    (hz : z ∈ support (countingOracle.simulate oa 0)) :
+    (∑ i, z.2 i) ≤ n := by
+  induction oa using OracleComp.inductionOn generalizing n z with
+  | pure x =>
+      rw [countingOracle.mem_support_simulate_pure_iff] at hz
+      subst z
+      simp
+  | query_bind t mx ih =>
+      rw [isTotalQueryBound_query_bind_iff] at h
+      rw [countingOracle.mem_support_simulate_queryBind_iff] at hz
+      obtain ⟨hz0, u, hz'⟩ := hz
+      have hu :
+          ∑ i, Function.update z.2 t (z.2 t - 1) i ≤ n - 1 :=
+        ih u (h.2 u) hz'
+      have hsum : ∑ i, Function.update z.2 t (z.2 t - 1) i = (∑ i, z.2 i) - 1 := by
+        exact sum_update_pred (Nat.pos_of_ne_zero hz0)
+      rw [hsum] at hu
+      have hsum_pos : 0 < ∑ i, z.2 i := by
+        exact Nat.lt_of_lt_of_le (Nat.pos_of_ne_zero hz0)
+          (Finset.single_le_sum (fun _ _ => Nat.zero_le _) (Finset.mem_univ t))
+      omega
+
+/-- If a stateful simulation has support cost at most one per query step, then any support
+point of the simulated prefix leaves the continuation bounded by the residual budget measured
+by that cost. The cost may under-approximate the true query count, so the resulting residual
+budget is correspondingly weaker but still sound. -/
+theorem IsTotalQueryBound.residual_of_mem_support_run_simulateQ_le_cost
+    [spec.Fintype] [spec.Inhabited]
+    {σ : Type u} {impl : QueryImpl spec (StateT σ (OracleComp spec))}
+    (cost : σ → ℕ)
+    (hstep : ∀ t : spec.Domain, ∀ st : σ,
+      ∀ x : spec.Range t × σ, x ∈ support ((impl t).run st) →
+        cost x.2 ≤ cost st + 1)
+    {oa : OracleComp spec α} {ob : α → OracleComp spec β} {n : ℕ}
+    (h : IsTotalQueryBound (oa >>= ob) n)
+    {st₀ : σ} {z : α × σ}
+    (hz : z ∈ support ((simulateQ impl oa).run st₀)) :
+    IsTotalQueryBound (ob z.1) (n - (cost z.2 - cost st₀)) := by
+  rcases countingOracle.exists_mem_support_simulate_of_mem_support_run_simulateQ_le_cost
+      (spec := spec) (ι := ι) (impl := impl) cost hstep hz with
+    ⟨qc, hqc, hcost⟩
+  have hres :
+      IsTotalQueryBound (ob z.1) (n - ∑ i, qc i) :=
+    IsTotalQueryBound.residual_of_mem_support_counting
+      (spec := spec) (ι := ι) (oa := oa) (ob := ob) (n := n) h hqc
+  have hdiff : cost z.2 - cost st₀ ≤ ∑ i, qc i := by
+    omega
+  exact hres.mono (by omega)
+
+end CountingResidual
 
 section IsPerIndexQueryBound
 

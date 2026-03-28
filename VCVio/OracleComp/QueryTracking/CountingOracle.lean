@@ -402,6 +402,75 @@ lemma mem_support_simulate_queryBind_iff (t : spec.Domain)
     exact (mem_support_simulate_iff (oa := ((query t : OracleComp spec _) >>= oa))
       qc z).2 ⟨q0, hq0mem, hqsum⟩
 
+lemma add_single_mem_support_simulate_queryBind {t : spec.Domain}
+    {oa : spec.Range t → OracleComp spec α} {u : spec.Range t}
+    {z : α × QueryCount ι}
+    (hz : z ∈ support (simulate (oa u) 0)) :
+    (z.1, QueryCount.single t + z.2) ∈
+      support (simulate ((query t : OracleComp spec _) >>= oa) 0) := by
+  rw [mem_support_simulate_queryBind_iff]
+  refine ⟨by simp [QueryCount.single], ⟨u, ?_⟩⟩
+  convert hz using 2
+  funext j
+  by_cases hj : j = t
+  · subst hj
+    simp [QueryCount.single]
+  · simp [Function.update, hj, QueryCount.single]
+
+section CostSupport
+
+variable [spec.Fintype] [spec.Inhabited] [Fintype ι]
+
+lemma exists_mem_support_simulate_of_mem_support_run_simulateQ_le_cost
+    {σ : Type u} {impl : QueryImpl spec (StateT σ (OracleComp spec))}
+    (cost : σ → ℕ)
+    (hstep : ∀ t : spec.Domain, ∀ st : σ,
+      ∀ x : spec.Range t × σ, x ∈ support ((impl t).run st) →
+        cost x.2 ≤ cost st + 1)
+    {oa : OracleComp spec α} {st₀ : σ} {z : α × σ}
+    (hz : z ∈ support (((simulateQ impl oa).run st₀) : OracleComp spec (α × σ))) :
+    ∃ qc : QueryCount ι,
+      (z.1, qc) ∈ support ((simulate (spec := spec) (α := α) (oa := oa)
+        (0 : QueryCount ι)) : OracleComp spec (α × QueryCount ι)) ∧
+      cost z.2 ≤ cost st₀ + ∑ i, qc i := by
+  induction oa using OracleComp.inductionOn generalizing st₀ z with
+  | pure x =>
+      simp [simulateQ_pure] at hz
+      subst z
+      refine ⟨0, ?_, ?_⟩
+      · simpa [simulate]
+      · simp
+  | query_bind t mx ih =>
+      rw [simulateQ_query_bind, StateT.run_bind] at hz
+      rw [support_bind] at hz
+      simp only [Set.mem_iUnion] at hz
+      obtain ⟨qu, hqu, hz'⟩ := hz
+      rcases ih qu.1 (st₀ := qu.2) (z := z) hz' with ⟨qc, hqc, hcost⟩
+      refine ⟨QueryCount.single t + qc, ?_, ?_⟩
+      · exact add_single_mem_support_simulate_queryBind hqc
+      · have hstep' : cost qu.2 ≤ cost st₀ + 1 :=
+          hstep t st₀ qu hqu
+        have hsum_single : ∑ i, QueryCount.single t i = 1 := by
+          rw [QueryCount.single]
+          conv_lhs =>
+            rw [← Finset.add_sum_erase Finset.univ (Function.update 0 t 1) (Finset.mem_univ t)]
+          simp only [Function.update_self]
+          have herase :
+              ∑ x ∈ Finset.univ.erase t, Function.update (0 : QueryCount ι) t 1 x = 0 := by
+            apply Finset.sum_eq_zero
+            intro j hj
+            have hjt : j ≠ t := Finset.ne_of_mem_erase hj
+            show Function.update (0 : QueryCount ι) t 1 j = 0
+            simp [Function.update, hjt]
+          rw [herase]
+        calc
+          cost z.2 ≤ cost qu.2 + ∑ i, qc i := hcost
+          _ ≤ (cost st₀ + 1) + ∑ i, qc i := by omega
+          _ = cost st₀ + ∑ i, (QueryCount.single t + qc) i := by
+              simp [Finset.sum_add_distrib, hsum_single, add_assoc, add_left_comm, add_comm]
+
+end CostSupport
+
 lemma exists_mem_support_of_mem_support {oa : OracleComp spec α} {x : α} (hx : x ∈ support oa)
     (qc : QueryCount ι) : ∃ qc', (x, qc') ∈ support (simulate oa qc) := by
   have hx' : x ∈ support (Prod.fst <$> (simulateQ countingOracle oa).run) := by
