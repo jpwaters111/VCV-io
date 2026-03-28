@@ -2804,6 +2804,22 @@ private def hidingAvgComp {AUX : Type} {t : ℕ}
   let b ← OracleComp.liftComp (hidingOa A s) (HidingAvgSpec M S C)
   pure (s, b)
 
+/-- Textbook-facing bounded real hiding experiment: the challenge salt is sampled once inside the
+experiment, then the real hiding game for that salt is run. -/
+private def hidingMixedReal {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    OracleComp (HidingAvgSpec M S C) Bool := do
+  let s ← query (spec := HidingAvgSpec M S C) (Sum.inl ())
+  OracleComp.liftComp (hidingReal A s) (HidingAvgSpec M S C)
+
+/-- Textbook-facing bounded simulator experiment: sample the hidden salt internally, then run the
+corresponding per-salt simulator game. -/
+private def hidingMixedSim {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    OracleComp (HidingAvgSpec M S C) Bool := do
+  let s ← query (spec := HidingAvgSpec M S C) (Sum.inl ())
+  OracleComp.liftComp (hidingSim A s) (HidingAvgSpec M S C)
+
 private lemma run_simulateQ_hidingAvgRightImpl_eq_liftComp {α : Type}
     (oa : OracleComp (CMOracle M S C) α)
     (st : HidingCountState M S C) :
@@ -4957,7 +4973,15 @@ theorem sum_probEvent_hidingBad_le {AUX : Type} {t : ℕ}
     _ = t := by
         rw [ENNReal.tsum_mul_right, HasEvalPMF.tsum_probOutput_eq_one, one_mul]
 
-/-- **Hiding theorem (Lemma cm-hiding, averaged version)**:
+private lemma tvDist_liftComp_hidingAvgSpec {α : Type}
+    (oa ob : OracleComp (CMOracle M S C) α) :
+    tvDist
+        (OracleComp.liftComp oa (HidingAvgSpec M S C))
+        (OracleComp.liftComp ob (HidingAvgSpec M S C)) =
+      tvDist oa ob := by
+  rw [tvDist, tvDist, evalDist_liftComp, evalDist_liftComp]
+
+/-- **Hiding theorem (averaged technical form)**:
 The average statistical distance between real and simulated hiding games,
 taken over uniformly random salt `s`, is at most `t / |S|`.
 
@@ -4994,3 +5018,57 @@ theorem hiding_bound_avg {AUX : Type} {t : ℕ}
         exact (ENNReal.toReal_le_toReal
           (ne_top_of_le_ne_top ENNReal.coe_ne_top hsum)
           ENNReal.coe_ne_top).mpr hsum
+
+/-- **Hiding theorem (Lemma cm-hiding, bounded packaged form)**:
+sample the salt uniformly inside the experiment, then compare the resulting real and simulated
+hiding games. This is the bounded-query textbook-facing wrapper around `hiding_bound_avg`. -/
+theorem hiding_bound_finite {AUX : Type} {t : ℕ}
+    (A : HidingAdversary M S C AUX t) :
+    tvDist (hidingMixedReal (M := M) (S := S) (C := C) A)
+      (hidingMixedSim (M := M) (S := S) (C := C) A) ≤
+    (t : ℝ) / (Fintype.card S : ℝ) := by
+  have hbind :
+      tvDist (hidingMixedReal (M := M) (S := S) (C := C) A)
+          (hidingMixedSim (M := M) (S := S) (C := C) A) ≤
+        ∑' s : S,
+          Pr[= s |
+              (query (spec := HidingAvgSpec M S C) (Sum.inl ()) :
+                OracleComp (HidingAvgSpec M S C) S)].toReal *
+            tvDist
+              (OracleComp.liftComp (hidingReal A s) (HidingAvgSpec M S C))
+              (OracleComp.liftComp (hidingSim A s) (HidingAvgSpec M S C)) := by
+    simpa [hidingMixedReal, hidingMixedSim] using
+      (_root_.tvDist_bind_left_le
+        (mx := (query (spec := HidingAvgSpec M S C) (Sum.inl ()) :
+          OracleComp (HidingAvgSpec M S C) S))
+        (f := fun s => OracleComp.liftComp (hidingReal A s) (HidingAvgSpec M S C))
+        (g := fun s => OracleComp.liftComp (hidingSim A s) (HidingAvgSpec M S C)))
+  refine le_trans hbind ?_
+  calc
+    ∑' s : S,
+        Pr[= s |
+            (query (spec := HidingAvgSpec M S C) (Sum.inl ()) :
+              OracleComp (HidingAvgSpec M S C) S)].toReal *
+          tvDist
+            (OracleComp.liftComp (hidingReal A s) (HidingAvgSpec M S C))
+            (OracleComp.liftComp (hidingSim A s) (HidingAvgSpec M S C))
+      = ∑' s : S,
+          Pr[= s |
+              (query (spec := HidingAvgSpec M S C) (Sum.inl ()) :
+                OracleComp (HidingAvgSpec M S C) S)].toReal *
+            tvDist (hidingReal A s) (hidingSim A s) := by
+            refine tsum_congr fun s => ?_
+            rw [tvDist_liftComp_hidingAvgSpec]
+    _ = ∑ s : S, ((Fintype.card S : ℝ≥0∞)⁻¹).toReal * tvDist (hidingReal A s) (hidingSim A s) := by
+          rw [tsum_fintype]
+          refine Finset.sum_congr rfl ?_
+          intro s hs
+          simp [probOutput_query, HidingAvgSpec]
+    _ = (((Fintype.card S : ℝ≥0∞)⁻¹).toReal) *
+          ∑ s : S, tvDist (hidingReal A s) (hidingSim A s) := by
+          rw [← Finset.mul_sum]
+    _ = ((Fintype.card S : ℝ)⁻¹) * ∑ s : S, tvDist (hidingReal A s) (hidingSim A s) := by
+          simp [ENNReal.toReal_inv, ENNReal.toReal_natCast]
+    _ = (∑ s : S, tvDist (hidingReal A s) (hidingSim A s)) / (Fintype.card S : ℝ) := by
+          rw [div_eq_mul_inv, mul_comm]
+    _ ≤ (t : ℝ) / (Fintype.card S : ℝ) := hiding_bound_avg (M := M) (S := S) (C := C) A

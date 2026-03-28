@@ -23,6 +23,72 @@ open ENNReal
 
 universe u v
 
+/-! ### PMF tvDist convexity under a shared left bind -/
+
+namespace PMF
+
+section DataProcessing
+
+universe w
+
+variable {α' : Type w} {β : Type w}
+
+private lemma etvDist_bind_left_le (p : PMF α') (f g : α' → PMF β) :
+    (p.bind f).etvDist (p.bind g) ≤ ∑' a, p a * (f a).etvDist (g a) := by
+  have hrhs :
+      (∑' a, p a * (f a).etvDist (g a)) =
+        (∑' a, p a * ∑' y, ENNReal.absDiff (f a y) (g a y)) / 2 := by
+    calc
+      (∑' a, p a * (f a).etvDist (g a))
+        = ∑' a, (p a * ∑' y, ENNReal.absDiff (f a y) (g a y)) / 2 := by
+            refine tsum_congr fun a => ?_
+            rw [PMF.etvDist, div_eq_mul_inv, div_eq_mul_inv, mul_assoc]
+      _ = (∑' a, p a * ∑' y, ENNReal.absDiff (f a y) (g a y)) / 2 := by
+            simpa [div_eq_mul_inv] using
+              (ENNReal.tsum_mul_right
+                (f := fun a => p a * ∑' y, ENNReal.absDiff (f a y) (g a y))
+                (a := (2 : ℝ≥0∞)⁻¹))
+  rw [PMF.etvDist, hrhs]
+  apply ENNReal.div_le_div_right
+  calc
+    ∑' y, ENNReal.absDiff (∑' a, p a * f a y) (∑' a, p a * g a y)
+      ≤ ∑' y, ∑' a, ENNReal.absDiff (p a * f a y) (p a * g a y) := by
+          refine ENNReal.tsum_le_tsum fun y => ?_
+          exact ENNReal.absDiff_tsum_le _ _
+    _ ≤ ∑' y, ∑' a, ENNReal.absDiff (f a y) (g a y) * p a := by
+          refine ENNReal.tsum_le_tsum fun y => ?_
+          refine ENNReal.tsum_le_tsum fun a => ?_
+          simpa [mul_comm] using ENNReal.absDiff_mul_right_le (f a y) (g a y) (p a)
+    _ = ∑' a, ∑' y, ENNReal.absDiff (f a y) (g a y) * p a := by
+          rw [ENNReal.tsum_comm]
+    _ = ∑' a, p a * ∑' y, ENNReal.absDiff (f a y) (g a y) := by
+          refine tsum_congr fun a => ?_
+          rw [ENNReal.tsum_mul_right, mul_comm]
+
+lemma tvDist_bind_left_le (p : PMF α') (f g : α' → PMF β) :
+    (p.bind f).tvDist (p.bind g) ≤ ∑' a, (p a).toReal * (f a).tvDist (g a) := by
+  have hfinite_sum : (∑' a, p a * (f a).etvDist (g a)) ≠ ∞ := by
+    refine ne_top_of_le_ne_top one_ne_top ?_
+    calc
+      ∑' a, p a * (f a).etvDist (g a)
+        ≤ ∑' a, p a * 1 := by
+            refine ENNReal.tsum_le_tsum fun a => ?_
+            exact mul_le_mul' le_rfl (PMF.etvDist_le_one _ _)
+      _ = 1 := by rw [ENNReal.tsum_mul_right, p.tsum_coe, one_mul]
+  rw [PMF.tvDist]
+  refine le_trans
+    (ENNReal.toReal_mono hfinite_sum (etvDist_bind_left_le p f g)) ?_
+  rw [ENNReal.tsum_toReal_eq]
+  · refine le_of_eq ?_
+    refine tsum_congr fun a => ?_
+    rw [ENNReal.toReal_mul, PMF.tvDist_def]
+  · intro a
+    exact ENNReal.mul_ne_top (by simp) (PMF.etvDist_ne_top _ _)
+
+end DataProcessing
+
+end PMF
+
 /-! ### SPMF.tvDist -/
 
 namespace SPMF
@@ -145,6 +211,74 @@ lemma tvDist_le_probEvent_of_probOutput_eq_of_not
         simp [ENNReal.mul_div_cancel two_ne_zero ofNat_ne_top]
 
 end monadic
+
+section monadic_bind_left
+
+variable {m : Type u → Type v} [Monad m] [LawfulMonad m] [HasEvalPMF m] {α β : Type u}
+
+private lemma spmf_toPMF_bind_liftM_eq_map_some (p : PMF α) (f : α → PMF β) :
+    (((liftM p : SPMF α) >>= fun a => liftM (f a)).toPMF) = Option.some <$> (p.bind f) := by
+  ext o
+  cases o with
+  | none =>
+      simp [SPMF.toPMF_bind, Option.elimM, Functor.map, PMF.bind_apply]
+  | some b =>
+      simp [SPMF.toPMF_bind, Option.elimM, Functor.map, PMF.bind_apply]
+
+private lemma pmf_tvDist_map_some_eq (p q : PMF β) :
+    PMF.tvDist (Option.some <$> p) (Option.some <$> q) = PMF.tvDist p q := by
+  classical
+  rw [PMF.tvDist_def, PMF.tvDist_def, PMF.etvDist, PMF.etvDist]
+  have hp : (Option.some <$> p) none = 0 := by
+    simp [Functor.map, PMF.bind_apply]
+  have hq : (Option.some <$> q) none = 0 := by
+    simp [Functor.map, PMF.bind_apply]
+  congr 1
+  rw [tsum_option _ ENNReal.summable, hp, hq, ENNReal.absDiff_self, zero_add]
+  have hsome :
+      (∑' x : β, ENNReal.absDiff ((Option.some <$> p) (some x)) ((Option.some <$> q) (some x))) =
+        ∑' x : β, ENNReal.absDiff (p x) (q x) := by
+    refine tsum_congr fun x : β => ?_
+    simp [Functor.map, PMF.bind_apply]
+  exact congrArg (fun z : ℝ≥0∞ => z / 2) hsome
+
+private lemma spmf_tvDist_bind_left_le_liftM (p : PMF α) (f g : α → PMF β) :
+    SPMF.tvDist
+        ((liftM p : SPMF α) >>= fun a => liftM (f a))
+        ((liftM p : SPMF α) >>= fun a => liftM (g a)) ≤
+      ∑' a, (p a).toReal * PMF.tvDist (f a) (g a) := by
+  rw [SPMF.tvDist, spmf_toPMF_bind_liftM_eq_map_some, spmf_toPMF_bind_liftM_eq_map_some,
+    pmf_tvDist_map_some_eq]
+  exact PMF.tvDist_bind_left_le p f g
+
+omit [LawfulMonad m] in
+private lemma tvDist_eq_pmf_tvDist (x y : m β) :
+    tvDist x y = PMF.tvDist (HasEvalPMF.toPMF x) (HasEvalPMF.toPMF y) := by
+  rw [tvDist, HasEvalPMF.evalDist_of_hasEvalPMF_def, HasEvalPMF.evalDist_of_hasEvalPMF_def,
+    SPMF.tvDist, SPMF.toPMF_liftM, SPMF.toPMF_liftM]
+  simpa [Functor.map] using
+    (pmf_tvDist_map_some_eq (HasEvalPMF.toPMF x) (HasEvalPMF.toPMF y))
+
+lemma tvDist_bind_left_le (mx : m α) (f g : α → m β) :
+    tvDist (mx >>= f) (mx >>= g) ≤ ∑' a, Pr[= a | mx].toReal * tvDist (f a) (g a) := by
+  rw [tvDist, evalDist_bind, evalDist_bind]
+  simp_rw [HasEvalPMF.evalDist_of_hasEvalPMF_def]
+  calc
+    SPMF.tvDist
+        ((liftM (HasEvalPMF.toPMF mx) : SPMF α) >>= fun a => liftM (HasEvalPMF.toPMF (f a)))
+        ((liftM (HasEvalPMF.toPMF mx) : SPMF α) >>= fun a => liftM (HasEvalPMF.toPMF (g a)))
+      ≤ ∑' a, (HasEvalPMF.toPMF mx a).toReal *
+          PMF.tvDist (HasEvalPMF.toPMF (f a)) (HasEvalPMF.toPMF (g a)) := by
+            exact spmf_tvDist_bind_left_le_liftM (HasEvalPMF.toPMF mx)
+              (fun a => HasEvalPMF.toPMF (f a))
+              (fun a => HasEvalPMF.toPMF (g a))
+    _ = ∑' a, Pr[= a | mx].toReal * tvDist (f a) (g a) := by
+          refine tsum_congr fun a => ?_
+          have hprob : Pr[= a | mx] = HasEvalPMF.toPMF mx a := by
+            simp [probOutput_def, HasEvalPMF.evalDist_of_hasEvalPMF_def]
+          rw [hprob, ← tvDist_eq_pmf_tvDist (x := f a) (y := g a)]
+
+end monadic_bind_left
 
 section bool_tvdist
 

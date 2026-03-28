@@ -1,16 +1,53 @@
 # Hiding Proof Final Handoff
 
-This handoff is for finishing the last remaining proof hole in
-`Examples/CommitmentSchemeRO.lean`.
+This note is now historical.
+
+The bounded hiding proof in `Examples/CommitmentSchemeRO.lean` is complete. In
+particular:
+
+- `sum_probEvent_hidingBad_le` is proved
+- `hiding_bound_avg` is proved
+- `hiding_bound_finite` is proved
+
+After rebuilding the example target, the axiom check for the bounded theorem
+chain reports only:
+
+- `propext`
+- `Classical.choice`
+- `Quot.sound`
+
+and does **not** report `sorryAx`.
 
 ## Current state
 
-- `lake env lean Examples/CommitmentSchemeRO.lean` is clean except for one final `sorry`.
+- `lake env lean Examples/CommitmentSchemeRO.lean` succeeds.
+- `lake build Examples.CommitmentSchemeRO` succeeds.
 - `rg -n "sorry" Examples/CommitmentSchemeRO.lean` shows:
-  - the status/doc note near line 641
-  - the real proof hole at `sum_probEvent_hidingBad_le`
-- The remaining theorem is:
-  - `sum_probEvent_hidingBad_le` at roughly line 4354
+  - only the status/doc note near line 641
+- `#print axioms hiding_bound_avg` and
+  `#print axioms sum_probEvent_hidingBad_le` report no `sorryAx` **after**
+  rebuilding `Examples.CommitmentSchemeRO`.
+
+Use this verification sequence:
+
+```bash
+lake env lean Examples/CommitmentSchemeRO.lean
+lake build Examples.CommitmentSchemeRO
+printf '%s\n' \
+  'import Examples.CommitmentSchemeRO' \
+  '#print axioms hiding_bound_avg' \
+  '#print axioms sum_probEvent_hidingBad_le' | lake env lean /dev/stdin
+```
+
+If an imported axiom check reports `sorryAx` for these theorems, first rebuild
+`Examples.CommitmentSchemeRO`; the stale `.olean` was the source of the earlier
+false positive.
+
+## Historical note
+
+The rest of this file records the earlier handoff from when
+`sum_probEvent_hidingBad_le` was still open. It is preserved for reference, not
+as an active todo list.
 
 ## What already compiles
 
