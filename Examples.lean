@@ -20,6 +20,14 @@ import Examples.ElGamal.Common
 import Examples.ElGamal.Hash
 import Examples.ElGamal.ReductionCost
 import Examples.FrankingProtocol
+import Examples.MerkleCommitmentScheme
+import Examples.MerkleCommitmentScheme.Collision
+import Examples.MerkleCommitmentScheme.Common
+import Examples.MerkleCommitmentScheme.Completeness
+import Examples.MerkleCommitmentScheme.Support
+import Examples.MerkleCommitmentScheme.Support.Indexing
+import Examples.MerkleCommitmentScheme.Support.QueryBound
+import Examples.MerkleCommitmentScheme.Support.Trace
 import Examples.OneTimePad
 import Examples.PRFTagReader
 import Examples.PRGfromPRF
