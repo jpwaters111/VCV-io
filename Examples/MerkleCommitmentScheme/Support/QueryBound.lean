@@ -1,4 +1,4 @@
-/-
+/- 
 Copyright (c) 2026 OpenAI Codex. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: OpenAI Codex
@@ -15,6 +15,8 @@ Total-query-bound lemmas for Merkle opening verification.
 
 open OracleSpec OracleComp
 
+namespace MerkleTree
+
 variable {M S C : Type}
 
 private theorem isTotalQueryBound_liftQuery_one {ι : Type} {spec : OracleSpec ι}
@@ -26,95 +28,117 @@ private theorem isTotalQueryBound_liftQuery_one {ι : Type} {spec : OracleSpec �
   exact ⟨Nat.succ_pos _, fun _ => trivial⟩
 
 /-- Recomputing a single Merkle root makes exactly `depth + 1` oracle queries. -/
-theorem mtRecomputeRootSingle_totalQueryBound {depth : ℕ} (idx : MTIndex depth)
-    (message : M) (authPath : MTAuthPath S C depth) :
+theorem recomputeRootAux_totalQueryBound {depth : ℕ} (idx : Index depth)
+    (current : C) (siblings : Vector C depth) :
     IsTotalQueryBound
-      (MTRecomputeRootSingle (M := M) (S := S) (C := C) idx message authPath)
-      (depth + 1) := by
-  induction depth generalizing message with
+      (recomputeRootAux (M := M) (S := S) (C := C) idx current siblings)
+      depth := by
+  induction depth generalizing current with
   | zero =>
-      simpa [MTRecomputeRootSingle, MTLeafCommit] using
-        (isTotalQueryBound_liftQuery_one
-          (spec := MTOracle M S C) (t := Sum.inl (message, authPath.salt)))
+      trivial
   | succ depth ih =>
-      cases hsplit : MTSplitIndex idx with
-      | inl childIdx =>
-          simp [MTRecomputeRootSingle, hsplit]
-          have hchild :
-              IsTotalQueryBound
-                (MTRecomputeRootSingle (M := M) (S := S) (C := C)
-                  childIdx message ⟨authPath.salt, authPath.siblings.tail⟩)
-                (depth + 1) :=
-            ih childIdx message ⟨authPath.salt, authPath.siblings.tail⟩
-          have hnext : ∀ child,
-              IsTotalQueryBound
-                (MTNodeCommit (C := C) child authPath.siblings.head :
-                  OracleComp (MTOracle M S C) C)
-                1 := by
-            intro child
-            simpa [MTNodeCommit] using
-              (isTotalQueryBound_liftQuery_one
-                (spec := MTOracle M S C) (t := Sum.inr (child, authPath.siblings.head)))
-          exact (isTotalQueryBound_bind (n₁ := depth + 1) (n₂ := 1) hchild hnext).mono
-            (by omega)
-      | inr childIdx =>
-          simp [MTRecomputeRootSingle, hsplit]
-          have hchild :
-              IsTotalQueryBound
-                (MTRecomputeRootSingle (M := M) (S := S) (C := C)
-                  childIdx message ⟨authPath.salt, authPath.siblings.tail⟩)
-                (depth + 1) :=
-            ih childIdx message ⟨authPath.salt, authPath.siblings.tail⟩
-          have hnext : ∀ child,
-              IsTotalQueryBound
-                (MTNodeCommit (C := C) authPath.siblings.head child :
-                  OracleComp (MTOracle M S C) C)
-                1 := by
-            intro child
-            simpa [MTNodeCommit] using
-              (isTotalQueryBound_liftQuery_one
-                (spec := MTOracle M S C) (t := Sum.inr (authPath.siblings.head, child)))
-          exact (isTotalQueryBound_bind (n₁ := depth + 1) (n₂ := 1) hchild hnext).mono
-            (by omega)
+      by_cases hparity : idx.1 % 2 = 0
+      · simp [recomputeRootAux, hparity]
+        have hnode :
+            IsTotalQueryBound
+              (nodeCommit (C := C) current siblings.head : OracleComp (Oracle M S C) C)
+              1 := by
+          simpa [nodeCommit] using
+            (isTotalQueryBound_liftQuery_one
+              (spec := Oracle M S C) (t := Sum.inr (current, siblings.head)))
+        have hcont : ∀ parent,
+            IsTotalQueryBound
+              (recomputeRootAux (M := M) (S := S) (C := C)
+                (parentPos idx) parent siblings.tail)
+              depth := by
+          intro parent
+          simpa using ih (parentPos idx) parent siblings.tail
+        simpa [Nat.add_comm] using
+          (isTotalQueryBound_bind (n₁ := 1) (n₂ := depth) hnode hcont)
+      · simp [recomputeRootAux, hparity]
+        have hnode :
+            IsTotalQueryBound
+              (nodeCommit (C := C) siblings.head current : OracleComp (Oracle M S C) C)
+              1 := by
+          simpa [nodeCommit] using
+            (isTotalQueryBound_liftQuery_one
+              (spec := Oracle M S C) (t := Sum.inr (siblings.head, current)))
+        have hcont : ∀ parent,
+            IsTotalQueryBound
+              (recomputeRootAux (M := M) (S := S) (C := C)
+                (parentPos idx) parent siblings.tail)
+              depth := by
+          intro parent
+          simpa using ih (parentPos idx) parent siblings.tail
+        simpa [Nat.add_comm] using
+          (isTotalQueryBound_bind (n₁ := 1) (n₂ := depth) hnode hcont)
 
-/-- Checking a single Merkle opening makes exactly `depth + 1` oracle queries. -/
-theorem mtCheckSingle_totalQueryBound [DecidableEq C] {depth : ℕ} (commitment : C)
-    (idx : MTIndex depth) (message : M) (authPath : MTAuthPath S C depth) :
+/-- Recomputing a single Merkle root makes exactly `depth + 1` oracle queries. -/
+theorem recomputeRootSingle_totalQueryBound {depth : ℕ} (idx : Index depth)
+    (message : M) (authPath : AuthPath S C depth) :
     IsTotalQueryBound
-      (MTCheckSingle (M := M) (S := S) (C := C) commitment idx message authPath)
+      (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath)
       (depth + 1) := by
   change IsTotalQueryBound
-    (MTRecomputeRootSingle (M := M) (S := S) (C := C) idx message authPath >>= fun root =>
+    ((leafCommit (M := M) (S := S) (C := C) message authPath.salt :
+        OracleComp (Oracle M S C) C) >>= fun leaf =>
+      recomputeRootAux (M := M) (S := S) (C := C) idx leaf authPath.siblings)
+    (depth + 1)
+  have hleaf :
+      IsTotalQueryBound
+        (leafCommit (M := M) (S := S) (C := C) message authPath.salt :
+          OracleComp (Oracle M S C) C)
+        1 := by
+    simpa [leafCommit] using
+      (isTotalQueryBound_liftQuery_one
+        (spec := Oracle M S C) (t := Sum.inl (message, authPath.salt)))
+  have hcont : ∀ leaf,
+      IsTotalQueryBound
+        (recomputeRootAux (M := M) (S := S) (C := C) idx leaf authPath.siblings)
+        depth := by
+    intro leaf
+    exact recomputeRootAux_totalQueryBound (M := M) (S := S) (C := C) idx leaf authPath.siblings
+  simpa [Nat.add_comm] using
+    (isTotalQueryBound_bind (n₁ := 1) (n₂ := depth) hleaf hcont)
+
+/-- Checking a single Merkle opening makes exactly `depth + 1` oracle queries. -/
+theorem checkSingle_totalQueryBound [DecidableEq C] {depth : ℕ} (commitment : C)
+    (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
+    IsTotalQueryBound
+      (checkSingle (M := M) (S := S) (C := C) commitment idx message authPath)
+      (depth + 1) := by
+  change IsTotalQueryBound
+    (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath >>= fun root =>
       pure (commitment == root))
     (depth + 1)
   exact isTotalQueryBound_bind (n₁ := depth + 1) (n₂ := 0)
-    (mtRecomputeRootSingle_totalQueryBound (M := M) (S := S) (C := C) idx message authPath)
+    (recomputeRootSingle_totalQueryBound (M := M) (S := S) (C := C) idx message authPath)
     (fun _ => trivial)
 
 /-- Internal list-based batch checking uses at most one single-check budget per
 list entry. -/
-theorem mtCheckEntriesAux_totalQueryBound [DecidableEq C] {depth : ℕ} {I : MTIndexSet depth}
-    (commitment : C) (message : MTSubVector M I) (proof : MTProof S C I)
+theorem checkEntriesAux_totalQueryBound [DecidableEq C] {depth : ℕ} {I : IndexSet depth}
+    (commitment : C) (message : Subvector M I) (proof : Proof S C I)
     (xs : List {i // i ∈ I}) :
     IsTotalQueryBound
-      (MTCheckEntriesAux (M := M) (S := S) (C := C) commitment message proof xs)
+      (checkEntriesAux (M := M) (S := S) (C := C) commitment message proof xs)
       (xs.length * (depth + 1)) := by
   induction xs with
   | nil =>
       trivial
   | cons i xs ih =>
-      simp [MTCheckEntriesAux]
+      simp [checkEntriesAux]
       have hsingle :
           IsTotalQueryBound
-            (MTCheckSingle (M := M) (S := S) (C := C)
+            (checkSingle (M := M) (S := S) (C := C)
               commitment i.1 (message i) (proof i))
             (depth + 1) :=
-        mtCheckSingle_totalQueryBound (M := M) (S := S) (C := C)
+        checkSingle_totalQueryBound (M := M) (S := S) (C := C)
           commitment i.1 (message i) (proof i)
       have hcont : ∀ ok,
           IsTotalQueryBound
             (do
-              let restChecks ← MTCheckEntriesAux (M := M) (S := S) (C := C)
+              let restChecks ← checkEntriesAux (M := M) (S := S) (C := C)
                 commitment message proof xs
               pure (ok :: restChecks))
             (xs.length * (depth + 1)) := by
@@ -123,7 +147,7 @@ theorem mtCheckEntriesAux_totalQueryBound [DecidableEq C] {depth : ℕ} {I : MTI
           (isTotalQueryBound_bind (n₁ := xs.length * (depth + 1)) (n₂ := 0) ih
             (fun restChecks => by
               show IsTotalQueryBound
-                (pure (ok :: restChecks) : OracleComp (MTOracle M S C) (List Bool))
+                (pure (ok :: restChecks) : OracleComp (Oracle M S C) (List Bool))
                 0
               trivial))
       have hbound :
@@ -134,32 +158,34 @@ theorem mtCheckEntriesAux_totalQueryBound [DecidableEq C] {depth : ℕ} {I : MTI
 
 /-- Evaluating all batch-check components costs `I.card * (depth + 1)` oracle
 queries. -/
-theorem mtCheckEntries_totalQueryBound [DecidableEq C] {depth : ℕ}
-    (commitment : C) (I : MTIndexSet depth) (message : MTSubVector M I) (proof : MTProof S C I) :
+theorem checkEntries_totalQueryBound [DecidableEq C] {depth : ℕ}
+    (commitment : C) (I : IndexSet depth) (message : Subvector M I) (proof : Proof S C I) :
     IsTotalQueryBound
-      (MTCheckEntries (M := M) (S := S) (C := C) commitment I message proof)
+      (checkEntries (M := M) (S := S) (C := C) commitment I message proof)
       (I.card * (depth + 1)) := by
   classical
-  simpa [MTCheckEntries] using
-    mtCheckEntriesAux_totalQueryBound (M := M) (S := S) (C := C)
+  simpa [checkEntries] using
+    checkEntriesAux_totalQueryBound (M := M) (S := S) (C := C)
       commitment message proof I.attach.toList
 
 /-- Batch checking a fixed index set costs `I.card * (depth + 1)` oracle
 queries. -/
-theorem mtCheck_totalQueryBound [DecidableEq C] {depth : ℕ} (commitment : C)
-    (I : MTIndexSet depth) (message : MTSubVector M I) (proof : MTProof S C I) :
+theorem check_totalQueryBound [DecidableEq C] {depth : ℕ} (commitment : C)
+    (I : IndexSet depth) (message : Subvector M I) (proof : Proof S C I) :
     IsTotalQueryBound
-      (MTCheck (M := M) (S := S) (C := C) commitment I message proof)
+      (check (M := M) (S := S) (C := C) commitment I message proof)
       (I.card * (depth + 1)) := by
   change IsTotalQueryBound
-    (MTCheckEntries (M := M) (S := S) (C := C) commitment I message proof >>= fun oks =>
+    (checkEntries (M := M) (S := S) (C := C) commitment I message proof >>= fun oks =>
       pure (oks.all fun b => b))
     (I.card * (depth + 1))
   simpa using
     (isTotalQueryBound_bind (n₁ := I.card * (depth + 1)) (n₂ := 0)
-      (mtCheckEntries_totalQueryBound (M := M) (S := S) (C := C) commitment I message proof)
+      (checkEntries_totalQueryBound (M := M) (S := S) (C := C) commitment I message proof)
       (fun oks => by
         show IsTotalQueryBound
-          (pure (oks.all fun b => b) : OracleComp (MTOracle M S C) Bool)
+          (pure (oks.all fun b => b) : OracleComp (Oracle M S C) Bool)
           0
         trivial))
+
+end MerkleTree
