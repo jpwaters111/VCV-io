@@ -29,7 +29,7 @@ theorem refl (log : QueryLog spec) : LogContains log log := fun _ h => h
 
 theorem trans {l₀ l₁ l₂ : QueryLog spec}
     (h₀₁ : LogContains l₀ l₁) (h₁₂ : LogContains l₁ l₂) :
-    LogContains l₀ l₂ := fun entry h => h₁₂ _ (h₀₁ _ h)
+    LogContains l₀ l₂ := fun entry h => h₁₂ entry (h₀₁ entry h)
 
 theorem append_left (left right : QueryLog spec) : LogContains left (left ++ right) :=
   fun _ h => List.mem_append.mpr (.inl h)
@@ -168,5 +168,136 @@ def checkInternalQuery (f : OracleFn M S C) {depth : ℕ} (idx : Index depth) (m
     Sum.inr (childLabel, siblingLabel)
   else
     Sum.inr (siblingLabel, childLabel)
+
+@[simp] theorem checkPathLabel_root (f : OracleFn M S C) {depth : ℕ} (idx : Index depth)
+    (message : M) (authPath : AuthPath S C depth) :
+    checkPathLabel f idx message authPath ⟨0, Nat.succ_pos _⟩ =
+      let truncSiblings : Vector C depth := by
+        simpa [Nat.min_eq_left (Nat.sub_le _ _)] using authPath.siblings.take depth
+      recomputeRootSingleWithHash
+        (M := M) (S := S) (C := C)
+        (fun x => f (Sum.inl x))
+        (fun x => f (Sum.inr x))
+        (localIndex idx ⟨0, Nat.succ_pos _⟩)
+        message
+        ⟨authPath.salt, truncSiblings⟩ := by
+  rfl
+
+@[simp] theorem checkPathLabel_leaf (f : OracleFn M S C) {depth : ℕ} (idx : Index depth)
+    (message : M) (authPath : AuthPath S C depth) :
+    checkPathLabel f idx message authPath (Fin.last depth) =
+      let truncSiblings : Vector C (depth - (Fin.last depth).1) := by
+        simpa [Nat.min_eq_left (Nat.sub_le _ _)] using
+          authPath.siblings.take (depth - (Fin.last depth).1)
+      recomputeRootSingleWithHash
+        (M := M) (S := S) (C := C)
+        (fun x => f (Sum.inl x))
+        (fun x => f (Sum.inr x))
+        (localIndex idx (Fin.last depth))
+        message
+        ⟨authPath.salt, truncSiblings⟩ := by
+  simp [checkPathLabel]
+
+theorem checkPathLabel_parent (f : OracleFn M S C) {depth : ℕ} (idx : Index depth)
+    (message : M) (authPath : AuthPath S C depth) (layer : Fin depth) :
+    checkInternalQuery (M := M) (S := S) (C := C) f idx message authPath layer =
+      let childLayer : Fin (depth + 1) := ⟨layer.1 + 1, Nat.succ_lt_succ layer.2⟩
+      let childLabel := checkPathLabel f idx message authPath childLayer
+      let siblingLabel := copathLabel authPath layer
+      if (pathPos idx childLayer).1 % 2 = 0 then
+        Sum.inr (childLabel, siblingLabel)
+      else
+        Sum.inr (siblingLabel, childLabel) := by
+  rfl
+
+theorem logEval_map (f : OracleFn M S C) (g : α → β)
+    (oa : OracleComp (Oracle M S C) α) :
+    logEval f (g <$> oa) = let p := logEval f oa; (g p.1, p.2) := by
+  cases h : logEval f oa with
+  | mk a log =>
+      simp [map_eq_bind_pure_comp, logEval_bind, logEval_pure, h]
+
+theorem logEval_recomputeRootSingle (f : OracleFn M S C) {depth : ℕ}
+    (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
+    logEval f (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath) =
+      let leafQuery := checkLeafQuery (M := M) (S := S) (C := C) message authPath
+      let leafLabel := f leafQuery
+      let rest := logEval f
+        (recomputeRootAux (M := M) (S := S) (C := C) idx leafLabel authPath.siblings)
+      (rest.1, [⟨leafQuery, leafLabel⟩] ++ rest.2) := by
+  change logEval f
+      ((liftM (query (spec := Oracle M S C) (Sum.inl (message, authPath.salt)))) >>= fun leaf =>
+        recomputeRootAux (M := M) (S := S) (C := C) idx leaf authPath.siblings) = _
+  rw [logEval_bind, logEval_query]
+  rfl
+
+theorem logEval_checkSingle [DecidableEq C] (f : OracleFn M S C) {depth : ℕ}
+    (commitment : C) (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
+    logEval f (checkSingle (M := M) (S := S) (C := C) commitment idx message authPath) =
+      let rootEval := logEval f
+        (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath)
+      (commitment == rootEval.1, rootEval.2) := by
+  simpa [checkSingle] using
+    logEval_map (M := M) (S := S) (C := C) f (BEq.beq commitment)
+      (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath)
+
+theorem checkLeafQuery_mem_logEval_checkSingle [DecidableEq C] (f : OracleFn M S C) {depth : ℕ}
+    (commitment : C) (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
+    ⟨checkLeafQuery (M := M) (S := S) (C := C) message authPath,
+      f (checkLeafQuery (M := M) (S := S) (C := C) message authPath)⟩ ∈
+        (logEval f
+          (checkSingle (M := M) (S := S) (C := C) commitment idx message authPath)).2 := by
+  rw [logEval_checkSingle]
+  simp [logEval_recomputeRootSingle]
+
+theorem logContains_checkSingle_checkEntriesAux [DecidableEq C] {depth : ℕ}
+    (f : OracleFn M S C) {I : IndexSet depth} (commitment : C)
+    (message : Subvector M I) (proof : Proof S C I) :
+    ∀ xs : List {i // i ∈ I}, ∀ i, i ∈ xs →
+      LogContains
+        (logEval f
+          (checkSingle (M := M) (S := S) (C := C) commitment i.1 (message i) (proof i))).2
+        (logEval f
+          (checkEntriesAux (M := M) (S := S) (C := C) commitment message proof xs)).2
+  | [], _, hi => by
+      cases hi
+  | j :: xs, i, hi => by
+      simp [checkEntriesAux, logEval_bind]
+      by_cases hij : i = j
+      · subst hij
+        exact LogContains.append_left _ _
+      · have hmap :
+            (logEval f
+              (List.cons
+                (logEval f
+                  (checkSingle (M := M) (S := S) (C := C)
+                    commitment j.1 (message j) (proof j))).1 <$>
+                checkEntriesAux (M := M) (S := S) (C := C) commitment message proof xs)).2 =
+              (logEval f
+                (checkEntriesAux (M := M) (S := S) (C := C) commitment message proof xs)).2 := by
+            rw [logEval_map]
+        simpa [hmap] using
+          LogContains.trans
+            (logContains_checkSingle_checkEntriesAux f commitment message proof xs i
+              ((List.mem_cons.1 hi).resolve_left hij))
+            (LogContains.append_right _ _)
+
+theorem logContains_checkSingle_check [DecidableEq C] {depth : ℕ}
+    (f : OracleFn M S C) (commitment : C) (I : IndexSet depth)
+    (message : Subvector M I) (proof : Proof S C I) (i : {j // j ∈ I}) :
+    LogContains
+      (logEval f
+        (checkSingle (M := M) (S := S) (C := C) commitment i.1 (message i) (proof i))).2
+      (logEval f
+        (check (M := M) (S := S) (C := C) commitment I message proof)).2 := by
+  rw [show check (M := M) (S := S) (C := C) commitment I message proof =
+      (fun bs => bs.all fun b => b) <$>
+        checkEntriesAux (M := M) (S := S) (C := C) commitment message proof I.attach.toList by
+      simp [check, checkEntries]]
+  rw [logEval_map]
+  simpa [checkEntries] using
+    logContains_checkSingle_checkEntriesAux (M := M) (S := S) (C := C)
+      f commitment message proof I.attach.toList i
+      (by exact Finset.mem_toList.mpr (Finset.mem_attach I i))
 
 end MerkleTree

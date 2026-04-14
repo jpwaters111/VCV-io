@@ -36,6 +36,45 @@ variable {M S C α : Type}
   | succ depth =>
       simp [pathPos]
 
+theorem pathPos_val_eq_div_pow {depth : ℕ} (idx : Index depth) (layer : Fin (depth + 1)) :
+    (pathPos idx layer).1 = idx.1 / 2 ^ (depth - layer.1) := by
+  cases depth with
+  | zero =>
+      have hlayer : layer = 0 := by
+        apply Fin.ext
+        omega
+      subst hlayer
+      have hidx : idx = 0 := by
+        apply Fin.ext
+        omega
+      subst hidx
+      simp [pathPos]
+  | succ depth =>
+      by_cases hlast : layer.1 = depth + 1
+      · have hlayer : layer = Fin.last (depth + 1) := by
+          apply Fin.ext
+          simpa using hlast
+        subst hlayer
+        simp [pathPos]
+      · have hrec :=
+          pathPos_val_eq_div_pow (depth := depth) (idx := parentPos idx)
+            (layer := ⟨layer.1, lt_of_le_of_ne (Nat.le_of_lt_succ layer.2) hlast⟩)
+        rw [show pathPos idx layer =
+            pathPos (depth := depth) (parentPos idx)
+              ⟨layer.1, lt_of_le_of_ne (Nat.le_of_lt_succ layer.2) hlast⟩ by
+              simp [pathPos, hlast]]
+        rw [hrec, parentPos]
+        have hdiv :
+            idx.1 / 2 / 2 ^ (depth - layer.1) =
+              idx.1 / 2 ^ (depth + 1 - layer.1) := by
+          rw [Nat.div_div_eq_div_mul]
+          have hden :
+              2 * 2 ^ (depth - layer.1) = 2 ^ (depth + 1 - layer.1) := by
+            rw [show depth + 1 - layer.1 = depth - layer.1 + 1 by omega, pow_succ]
+            ring
+          simpa [hden]
+        simpa using hdiv
+
 @[simp] theorem parentPos_leftChildPos {layer : ℕ} (i : Fin (2 ^ layer)) :
     parentPos (leftChildPos i) = i := by
   apply Fin.ext

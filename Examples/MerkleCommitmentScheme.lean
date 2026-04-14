@@ -7,3 +7,4 @@ import Examples.MerkleCommitmentScheme.Common
 import Examples.MerkleCommitmentScheme.Support
 import Examples.MerkleCommitmentScheme.Completeness
 import Examples.MerkleCommitmentScheme.Collision
+import Examples.MerkleCommitmentScheme.Extractability

@@ -442,6 +442,78 @@ def partitionTrace (trace : QueryLog (Oracle M S C)) : TracePartition M S C :=
           { acc with internalQueries := entry :: acc.internalQueries })
     { leafQueries := [], internalQueries := [], otherQueries := [] }
 
+theorem mem_partitionTrace_leafQueries_iff (trace : QueryLog (Oracle M S C))
+    (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) :
+    entry ∈ (partitionTrace (M := M) (S := S) (C := C) trace).leafQueries ↔
+      entry ∈ trace ∧ ∃ ms : M × S, entry.1 = Sum.inl ms := by
+  induction trace with
+  | nil =>
+      simp [partitionTrace]
+  | cons hd tl ih =>
+      cases hd with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              constructor
+              · intro h
+                rcases List.mem_cons.mp h with h | h
+                · subst h
+                  exact ⟨by simp, ⟨ms, rfl⟩⟩
+                · rcases ih.mp h with ⟨htl, hdom⟩
+                  exact ⟨List.mem_cons_of_mem _ htl, hdom⟩
+              · rintro ⟨hmem, hdom⟩
+                rcases List.mem_cons.mp hmem with h | htl
+                · subst h
+                  simpa [partitionTrace]
+                · exact List.mem_cons_of_mem _ (ih.mpr ⟨htl, hdom⟩)
+          | inr cs =>
+              constructor
+              · intro h
+                rcases ih.mp h with ⟨htl, hdom⟩
+                exact ⟨List.mem_cons_of_mem _ htl, hdom⟩
+              · rintro ⟨hmem, hdom⟩
+                rcases List.mem_cons.mp hmem with h | htl
+                · rcases hdom with ⟨ms, hdomEq⟩
+                  cases h
+                  simp at hdomEq
+                · exact ih.mpr ⟨htl, hdom⟩
+
+theorem mem_partitionTrace_internalQueries_iff (trace : QueryLog (Oracle M S C))
+    (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) :
+    entry ∈ (partitionTrace (M := M) (S := S) (C := C) trace).internalQueries ↔
+      entry ∈ trace ∧ ∃ cs : C × C, entry.1 = Sum.inr cs := by
+  induction trace with
+  | nil =>
+      simp [partitionTrace]
+  | cons hd tl ih =>
+      cases hd with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              constructor
+              · intro h
+                rcases ih.mp h with ⟨htl, hdom⟩
+                exact ⟨List.mem_cons_of_mem _ htl, hdom⟩
+              · rintro ⟨hmem, hdom⟩
+                rcases List.mem_cons.mp hmem with h | htl
+                · rcases hdom with ⟨cs, hdomEq⟩
+                  cases h
+                  simp at hdomEq
+                · exact ih.mpr ⟨htl, hdom⟩
+          | inr cs =>
+              constructor
+              · intro h
+                rcases List.mem_cons.mp h with h | h
+                · subst h
+                  exact ⟨by simp, ⟨cs, rfl⟩⟩
+                · rcases ih.mp h with ⟨htl, hdom⟩
+                  exact ⟨List.mem_cons_of_mem _ htl, hdom⟩
+              · rintro ⟨hmem, hdom⟩
+                rcases List.mem_cons.mp hmem with h | htl
+                · subst h
+                  simpa [partitionTrace]
+                · exact List.mem_cons_of_mem _ (ih.mpr ⟨htl, hdom⟩)
+
 private def propagateInternalQueryAtLayer {layer : ℕ} [DecidableEq C]
     (left right answer : C) (oldChildren : Vector (Option C) (2 ^ (layer + 1)))
     (parents : Vector (Option C) (2 ^ layer)) :
@@ -457,28 +529,128 @@ private def propagateInternalQueryAtLayer {layer : ℕ} [DecidableEq C]
             else none
         | none => none
 
-private def propagateInternalQuery {depth : ℕ} [DecidableEq C] (left right answer : C)
-    (labels : PartialLabels C depth) : PartialLabels C depth :=
+private def propagateInternalQueryUsingBase {depth : ℕ} [DecidableEq C]
+    (left right answer : C) (baseLabels currentLabels : PartialLabels C depth) :
+    PartialLabels C depth :=
   fun
-    | ⟨0, _⟩ => labels ⟨0, Nat.succ_pos _⟩
+    | ⟨0, _⟩ => currentLabels ⟨0, Nat.succ_pos _⟩
     | ⟨Nat.succ layer, hlayer⟩ =>
         propagateInternalQueryAtLayer left right answer
-          (labels ⟨Nat.succ layer, hlayer⟩)
-          (labels ⟨layer, Nat.lt_of_succ_lt hlayer⟩)
+          (currentLabels ⟨Nat.succ layer, hlayer⟩)
+          (baseLabels ⟨layer, Nat.lt_of_succ_lt hlayer⟩)
+
+private def propagateInternalQueriesOnce {depth : ℕ} [DecidableEq C]
+    (trace : QueryLog (Oracle M S C)) (labels : PartialLabels C depth) :
+    PartialLabels C depth :=
+  let internal := (partitionTrace (M := M) (S := S) (C := C) trace).internalQueries
+  internal.foldl
+    (fun current entry =>
+      match entry with
+      | ⟨Sum.inr (left, right), answer⟩ =>
+          propagateInternalQueryUsingBase (depth := depth) left right answer labels current
+      | ⟨Sum.inl _, _⟩ => current)
+    labels
+
+private theorem propagateInternalQueryUsingBase_root {depth : ℕ} [DecidableEq C]
+    (left right answer : C) (baseLabels currentLabels : PartialLabels C depth) :
+    (propagateInternalQueryUsingBase (depth := depth) left right answer baseLabels currentLabels
+      ⟨0, Nat.succ_pos _⟩).head =
+      (currentLabels ⟨0, Nat.succ_pos _⟩).head := by
+  simp [propagateInternalQueryUsingBase]
+
+private theorem propagateInternalQueriesFold_root {depth : ℕ} [DecidableEq C] :
+    ∀ (entries : QueryLog (Oracle M S C))
+      (baseLabels currentLabels : PartialLabels C depth),
+      (entries.foldl
+          (fun current entry =>
+            match entry with
+            | ⟨Sum.inr (left, right), answer⟩ =>
+                propagateInternalQueryUsingBase (depth := depth)
+                  left right answer baseLabels current
+            | ⟨Sum.inl _, _⟩ => current)
+          currentLabels
+          ⟨0, Nat.succ_pos _⟩).head =
+        (currentLabels ⟨0, Nat.succ_pos _⟩).head
+  | [], _, currentLabels => by
+      simp
+  | entry :: entries, baseLabels, currentLabels => by
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl leaf =>
+              simpa using
+                propagateInternalQueriesFold_root (depth := depth) entries baseLabels currentLabels
+          | inr pair =>
+              rcases pair with ⟨left, right⟩
+              have hroot :=
+                propagateInternalQueryUsingBase_root (depth := depth)
+                  left right answer baseLabels currentLabels
+              calc
+                (entries.foldl
+                    (fun current entry =>
+                      match entry with
+                      | ⟨Sum.inr (left, right), answer⟩ =>
+                          propagateInternalQueryUsingBase (depth := depth)
+                            left right answer baseLabels current
+                      | ⟨Sum.inl _, _⟩ => current)
+                    (propagateInternalQueryUsingBase (depth := depth)
+                      left right answer baseLabels currentLabels)
+                    ⟨0, Nat.succ_pos _⟩).head
+                    = (propagateInternalQueryUsingBase (depth := depth)
+                        left right answer baseLabels currentLabels
+                        ⟨0, Nat.succ_pos _⟩).head :=
+                  propagateInternalQueriesFold_root (depth := depth) entries baseLabels
+                    (propagateInternalQueryUsingBase (depth := depth)
+                      left right answer baseLabels currentLabels)
+                _ = (currentLabels ⟨0, Nat.succ_pos _⟩).head := hroot
+
+private theorem propagateInternalQueriesOnce_root {depth : ℕ} [DecidableEq C]
+    (trace : QueryLog (Oracle M S C)) (labels : PartialLabels C depth) :
+    (propagateInternalQueriesOnce (M := M) (S := S) (C := C) (depth := depth) trace labels
+      ⟨0, Nat.succ_pos _⟩).head =
+      (labels ⟨0, Nat.succ_pos _⟩).head := by
+  unfold propagateInternalQueriesOnce
+  simpa using propagateInternalQueriesFold_root (M := M) (S := S) (C := C)
+    (depth := depth) ((partitionTrace (M := M) (S := S) (C := C) trace).internalQueries) labels labels
+
+private def closeInternalQueries {depth : ℕ} [DecidableEq C]
+    (trace : QueryLog (Oracle M S C)) :
+    ℕ → PartialLabels C depth → PartialLabels C depth
+  | 0, labels => labels
+  | Nat.succ n, labels =>
+      closeInternalQueries trace n <|
+        propagateInternalQueriesOnce (M := M) (S := S) (C := C) (depth := depth) trace labels
 
 /-- Build the partial internal-node tree rooted at `commitment` from the
 commit-phase trace. -/
 def buildPartialTreeFromTrace {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) :
     PartialLabels C depth :=
-  let internal := (partitionTrace (M := M) (S := S) (C := C) trace).internalQueries
-  internal.foldl
-    (fun labels entry =>
-      match entry with
-      | ⟨Sum.inr (left, right), answer⟩ =>
-          propagateInternalQuery (depth := depth) left right answer labels
-      | ⟨Sum.inl _, _⟩ => labels)
+  closeInternalQueries (M := M) (S := S) (C := C) (depth := depth) trace (depth + 1)
     (seedRoot (depth := depth) commitment)
+
+@[simp] theorem buildPartialTreeFromTrace_root {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) :
+    (buildPartialTreeFromTrace (M := M) (S := S) (C := C) (depth := depth) commitment trace
+      ⟨0, Nat.succ_pos _⟩).head = some commitment := by
+  suffices hroot :
+      ∀ n : ℕ, ∀ labels : PartialLabels C depth,
+        (closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+          trace n labels ⟨0, Nat.succ_pos _⟩).head =
+          (labels ⟨0, Nat.succ_pos _⟩).head by
+    simpa [buildPartialTreeFromTrace, seedRoot, Vector.head] using
+      hroot (depth + 1) (seedRoot (C := C) (depth := depth) commitment)
+  intro n
+  induction n with
+  | zero =>
+      intro labels
+      simp [closeInternalQueries]
+  | succ n ih =>
+      intro labels
+      rw [closeInternalQueries]
+      rw [ih]
+      exact propagateInternalQueriesOnce_root (M := M) (S := S) (C := C)
+        (depth := depth) trace labels
 
 private def populateLeafQuery {depth : ℕ} [DecidableEq C] (message : M) (salt : S) (answer : C)
     (labels : PartialLabels C depth) (leaves : PartialLeaves M S depth) :
@@ -490,6 +662,23 @@ private def populateLeafQuery {depth : ℕ} [DecidableEq C] (message : M) (salt 
         match (labels ⟨depth, Nat.lt_succ_self _⟩).get idx with
         | some label => if label = answer then some (message, salt) else none
         | none => none
+
+private theorem populateLeafQuery_get_eq_of_some {depth : ℕ} [DecidableEq C]
+    (queryMessage : M) (querySalt : S) (queryAnswer : C)
+    (labels : PartialLabels C depth) (leaves : PartialLeaves M S depth) (idx : Index depth)
+    (value : M × S) (hvalue : leaves.get idx = some value) :
+    (populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+      queryMessage querySalt queryAnswer labels leaves).get idx = some value := by
+  simp [populateLeafQuery, hvalue]
+
+private theorem populateLeafQuery_get_eq_some_of_none {depth : ℕ} [DecidableEq C]
+    (message : M) (salt : S) (answer : C)
+    (labels : PartialLabels C depth) (leaves : PartialLeaves M S depth) (idx : Index depth)
+    (hleaves : leaves.get idx = none)
+    (hlabel : (labels ⟨depth, Nat.lt_succ_self _⟩).get idx = some answer) :
+    (populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+      message salt answer labels leaves).get idx = some (message, salt) := by
+  simp [populateLeafQuery, hleaves, hlabel]
 
 /-- Populate the known leaves of a partial tree from commit-phase leaf queries. -/
 def populateLeavesFromTrace {depth : ℕ} [DecidableEq C] (trace : QueryLog (Oracle M S C))
@@ -515,6 +704,28 @@ def fillMissing {depth : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
   let labels : Labels C depth := fun layer =>
     Vector.ofFn fun idx => (state.labels layer).get idx |>.getD default
   (messages, ⟨salts, labels⟩)
+
+@[simp] theorem fillMissing_message_get_eq_of_some_leaf {depth : ℕ}
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (state : ExtractedState M S C depth) (idx : Index depth) (message : M) (salt : S)
+    (hleaf : state.leaves.get idx = some (message, salt)) :
+    (fillMissing (M := M) (S := S) (C := C) state).1.get idx = message := by
+  simp [fillMissing, hleaf]
+
+@[simp] theorem fillMissing_salt_get_eq_of_some_leaf {depth : ℕ}
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (state : ExtractedState M S C depth) (idx : Index depth) (message : M) (salt : S)
+    (hleaf : state.leaves.get idx = some (message, salt)) :
+    (fillMissing (M := M) (S := S) (C := C) state).2.salts.get idx = salt := by
+  simp [fillMissing, hleaf]
+
+@[simp] theorem fillMissing_label_get_eq_of_some_label {depth : ℕ}
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (state : ExtractedState M S C depth) (layer : Fin (depth + 1))
+    (idx : Fin (2 ^ layer.1)) (label : C)
+    (hlabel : (state.labels layer).get idx = some label) :
+    ((fillMissing (M := M) (S := S) (C := C) state).2.labels layer).get idx = label := by
+  simp [fillMissing, hlabel]
 
 private def commitmentAppears [DecidableEq C] (commitment : C) (trace : QueryLog (Oracle M S C)) : Bool :=
   trace.any fun

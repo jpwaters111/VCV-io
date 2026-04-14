@@ -24,6 +24,7 @@ import Examples.MerkleCommitmentScheme
 import Examples.MerkleCommitmentScheme.Collision
 import Examples.MerkleCommitmentScheme.Common
 import Examples.MerkleCommitmentScheme.Completeness
+import Examples.MerkleCommitmentScheme.Extractability
 import Examples.MerkleCommitmentScheme.Support
 import Examples.MerkleCommitmentScheme.Support.Indexing
 import Examples.MerkleCommitmentScheme.Support.QueryBound
