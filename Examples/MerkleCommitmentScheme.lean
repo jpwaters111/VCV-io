@@ -8,3 +8,5 @@ import Examples.MerkleCommitmentScheme.Support
 import Examples.MerkleCommitmentScheme.Completeness
 import Examples.MerkleCommitmentScheme.Collision
 import Examples.MerkleCommitmentScheme.Extractability
+import Examples.MerkleCommitmentScheme.Binding
+import Examples.MerkleCommitmentScheme.MultiExtractability

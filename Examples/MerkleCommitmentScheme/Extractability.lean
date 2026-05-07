@@ -154,6 +154,18 @@ def BadEvent {depth : ℕ} [DecidableEq C]
     ExtractorStateChangedEvent (M := M) (S := S) (C := C) x ∨
     HonestTraceEscapeEvent (M := M) (S := S) (C := C) f x
 
+/-- The number of non-dummy labels used in the textbook extractability bound. -/
+def extractabilityCountingTerm (depth t₁ : ℕ) : ℕ :=
+  min (2 * t₁ + 1) (2 ^ (depth + 1))
+
+/-- The single-commitment Merkle extractability error expression after the
+bad-event decomposition. -/
+noncomputable def extractabilityErrorTerm (C : Type) [Fintype C]
+    (depth t₁ t₂ : ℕ) : ℝ≥0∞ :=
+  ((t₁ ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C) +
+    (((t₂ + depth + 1) * extractabilityCountingTerm depth t₁ : ℕ) : ℝ≥0∞) *
+      (Fintype.card C : ℝ≥0∞)⁻¹
+
 @[simp] theorem extractabilityGame_eq {depth t : ℕ} [DecidableEq C] [DecidableEq M] [DecidableEq S]
     [Inhabited M] [Inhabited S] [Inhabited C]
     (A : ExtractAdversary M S C AUX depth t) :
@@ -1291,5 +1303,39 @@ theorem extractabilityWin_implies_badEvent {depth : ℕ} [DecidableEq C]
   rcases hwin.2 with hmsg | hproof
   · exact hmsg hsame.1
   · exact hproof hsame.2
+
+/-- Any probability bound for the textbook bad-event disjunction immediately
+bounds the Merkle extractability failure event. This is the probability-level
+combiner for the deterministic same-tree theorem. -/
+theorem extractability_bound_of_badEvent_bound {depth : ℕ}
+    [DecidableEq C] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (f : OracleFn M S C)
+    (oa : OracleComp (Oracle M S C) (ExtractTranscript M S C AUX depth))
+    (ε : ℝ≥0∞)
+    (hbad :
+      Pr[ fun x => BadEvent (M := M) (S := S) (C := C) f x | oa] ≤ ε) :
+    Pr[ fun x => ExtractabilityWin (M := M) (S := S) (C := C) f x | oa] ≤ ε :=
+  le_trans
+    (probEvent_mono fun x _ hx =>
+      extractabilityWin_implies_badEvent (M := M) (S := S) (C := C) f x hx)
+    hbad
+
+/-- Named single-commitment extractability bound once the three textbook
+bad-event estimates have been established for the chosen experiment. -/
+theorem extractability_bound {depth t : ℕ}
+    [DecidableEq C] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : ExtractAdversary M S C AUX depth t)
+    (f : OracleFn M S C)
+    (oa : OracleComp (Oracle M S C) (ExtractTranscript M S C AUX depth))
+    (hbad :
+      Pr[ fun x => BadEvent (M := M) (S := S) (C := C) f x | oa] ≤
+        extractabilityErrorTerm C depth A.t₁ A.t₂) :
+    Pr[ fun x => ExtractabilityWin (M := M) (S := S) (C := C) f x | oa] ≤
+      extractabilityErrorTerm C depth A.t₁ A.t₂ :=
+  extractability_bound_of_badEvent_bound
+    (M := M) (S := S) (C := C) f oa
+    (extractabilityErrorTerm C depth A.t₁ A.t₂) hbad
 
 end MerkleTree

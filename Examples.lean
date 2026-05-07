@@ -21,10 +21,12 @@ import Examples.ElGamal.Hash
 import Examples.ElGamal.ReductionCost
 import Examples.FrankingProtocol
 import Examples.MerkleCommitmentScheme
+import Examples.MerkleCommitmentScheme.Binding
 import Examples.MerkleCommitmentScheme.Collision
 import Examples.MerkleCommitmentScheme.Common
 import Examples.MerkleCommitmentScheme.Completeness
 import Examples.MerkleCommitmentScheme.Extractability
+import Examples.MerkleCommitmentScheme.MultiExtractability
 import Examples.MerkleCommitmentScheme.Support
 import Examples.MerkleCommitmentScheme.Support.Indexing
 import Examples.MerkleCommitmentScheme.Support.QueryBound
