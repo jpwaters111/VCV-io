@@ -264,85 +264,6 @@ private theorem extractorStateChangedEvent_implies_freshTraceKnownLabelHit_of_re
       (M := M) (S := S) (C := C)
       A hx hmono entry hfinal hnotCommit htarget
 
-private lemma run_simulateQ_loggingOracle_query_bind_merkle {α : Type}
-    (t : (Oracle M S C).Domain) (mx : (Oracle M S C).Range t → OracleComp (Oracle M S C) α) :
-    (simulateQ loggingOracle (liftM (query t) >>= mx)).run =
-      (query t : OracleComp (Oracle M S C) _) >>= fun u =>
-        (fun p : α × QueryLog (Oracle M S C) =>
-          (p.1, (⟨t, u⟩ : (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: p.2))
-          <$> (simulateQ loggingOracle (mx u)).run := by
-  simp [loggingOracle, QueryImpl.withLogging, OracleQuery.cont_query,
-    Prod.map, Function.id_def, Function.comp]
-
-private theorem logEval_oracleFnOfCache_eq_of_cached_logging {α : Type}
-    [DecidableEq M] [DecidableEq S] [DecidableEq C]
-    [Fintype C] [Inhabited C]
-    (oa : OracleComp (Oracle M S C) α)
-    {cache₀ cacheFinal : QueryCache (Oracle M S C)}
-    {z : (α × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C)}
-    (hz : z ∈ support
-      ((simulateQ cachingOracle ((simulateQ loggingOracle oa).run)).run cache₀))
-    (hmono : z.2 ≤ cacheFinal) :
-    logEval (M := M) (S := S) (C := C)
-      (oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal) oa = z.1 := by
-  induction oa using OracleComp.inductionOn generalizing z cache₀ cacheFinal with
-  | pure x =>
-      simp [logEval] at hz
-      subst z
-      rfl
-  | query_bind t mx ih =>
-      have hzWhole := hz
-      rw [run_simulateQ_loggingOracle_query_bind_merkle] at hz
-      rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
-      simp only [Set.mem_iUnion] at hz
-      rcases hz with ⟨⟨u, cache₁⟩, hquery, hcont⟩
-      rw [simulateQ_map] at hcont
-      change z ∈ support
-        ((fun p : (α × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C) =>
-            ((p.1.1,
-              (⟨t, u⟩ :
-                (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: p.1.2),
-              p.2)) <$>
-          ((simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run)).run cache₁))
-        at hcont
-      rw [support_map] at hcont
-      rcases hcont with ⟨w, hw, hzw⟩
-      rcases w with ⟨⟨value, tailLog⟩, cache₂⟩
-      have hzEq :
-          z = ((value, (⟨t, u⟩ :
-              (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: tailLog),
-            cache₂) := by
-        simpa using hzw.symm
-      subst z
-      have hmonoTail : cache₂ ≤ cacheFinal := by
-        simpa using hmono
-      have hentryInCache : cache₂ t = some u := by
-        exact
-          (OracleComp.log_entry_in_cache_and_mono
-            (spec := Oracle M S C) (liftM (query t) >>= mx) cache₀
-            ((value,
-              (⟨t, u⟩ :
-                (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: tailLog),
-              cache₂)
-            hzWhole).1
-            (⟨t, u⟩ :
-              (i : (Oracle M S C).Domain) × (Oracle M S C).Range i)
-            (by simp)
-      have hcacheFinal : cacheFinal t = some u := hmono
-        hentryInCache
-      have htail :
-          logEval (M := M) (S := S) (C := C)
-            (oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal) (mx u) =
-            (value, tailLog) := by
-        exact ih u (z := ((value, tailLog), cache₂)) (cache₀ := cache₁)
-          (cacheFinal := cacheFinal) hw hmonoTail
-      have hu :
-          oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal t = u := by
-        simpa using
-          oracleFnOfCache_apply_of_some (M := M) (S := S) (C := C)
-            (cache := cacheFinal) (t := t) (v := u) hcacheFinal
-      simp [logEval_bind, logEval_query, hu, htail]
-
 private theorem singleTrace_entry_in_final_cache_of_rest_support {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C]
@@ -798,157 +719,6 @@ private theorem witnessBadEventROM_implies_freshTraceKnownLabelHit_of_rest_suppo
         (M := M) (S := S) (C := C)
         A hx hz hnotCollBase hescape
 
-private lemma sum_update_succ_count {ι : Type} [Fintype ι] [DecidableEq ι]
-    (counts : ι → ℕ) (i : ι) :
-    ∑ j : ι, Function.update counts i (counts i + 1) j =
-      (∑ j : ι, counts j) + 1 := by
-  classical
-  calc
-    ∑ j : ι, Function.update counts i (counts i + 1) j =
-        Function.update counts i (counts i + 1) i +
-          Finset.sum (Finset.univ.erase i)
-            (fun j : ι => Function.update counts i (counts i + 1) j) := by
-          symm
-          exact Finset.univ.add_sum_erase
-            (f := fun j : ι => Function.update counts i (counts i + 1) j)
-            (Finset.mem_univ i)
-    _ = counts i + 1 + Finset.sum (Finset.univ.erase i) (fun j : ι => counts j) := by
-          simp only [Function.update_self]
-          congr 1
-          refine Finset.sum_congr rfl ?_
-          intro j hj
-          rw [Function.update_of_ne (Finset.ne_of_mem_erase hj)]
-    _ = counts i + Finset.sum (Finset.univ.erase i) (fun j : ι => counts j) + 1 := by
-          omega
-    _ = (∑ j : ι, counts j) + 1 := by
-          rw [← Finset.univ.add_sum_erase (f := fun j : ι => counts j) (Finset.mem_univ i)]
-
-private lemma log_length_le_of_mem_support_counting_simulate_run_logging
-    {α : Type} [DecidableEq M] [DecidableEq S] [DecidableEq C]
-    [Fintype M] [Fintype S] [Fintype C]
-    [Inhabited M] [Inhabited S] [Inhabited C]
-    (oa : OracleComp (Oracle M S C) α)
-    {z : (α × QueryLog (Oracle M S C)) × QueryCount (Oracle M S C).Domain}
-    (hz : z ∈ support (countingOracle.simulate
-      (spec := Oracle M S C) ((simulateQ loggingOracle oa).run) 0)) :
-    z.1.2.length ≤ ∑ q : (Oracle M S C).Domain, z.2 q := by
-  induction oa using OracleComp.inductionOn generalizing z with
-  | pure x =>
-      have hz' :
-          z ∈ support
-            (countingOracle.simulate (spec := Oracle M S C)
-              (ι := (Oracle M S C).Domain)
-              (pure (x, ([] : QueryLog (Oracle M S C)))) 0) := by
-        simpa [simulateQ_pure] using hz
-      rw [countingOracle.mem_support_simulate_pure_iff
-        (spec := Oracle M S C) (ι := (Oracle M S C).Domain)] at hz'
-      subst z
-      simp
-  | query_bind t mx ih =>
-      rw [run_simulateQ_loggingOracle_query_bind_merkle] at hz
-      rw [countingOracle.mem_support_simulate_queryBind_iff] at hz
-      obtain ⟨hz0, u, hz⟩ := hz
-      have hmap :
-          countingOracle.simulate
-            (((fun p : α × QueryLog (Oracle M S C) =>
-                (p.1,
-                  (⟨t, u⟩ :
-                    (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: p.2))
-                <$> (simulateQ loggingOracle (mx u)).run)) 0 =
-            (fun zz : (α × QueryLog (Oracle M S C)) × QueryCount (Oracle M S C).Domain =>
-              ((zz.1.1,
-                  (⟨t, u⟩ :
-                    (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: zz.1.2),
-                zz.2)) <$>
-              countingOracle.simulate
-                (spec := Oracle M S C) ((simulateQ loggingOracle (mx u)).run) 0 := by
-        simp [countingOracle.simulate, Prod.map, simulateQ_map]
-      rw [hmap, support_map] at hz
-      obtain ⟨w, hzu, hzEq⟩ := hz
-      rcases w with ⟨⟨zu, logu⟩, qcu⟩
-      have hz1 :
-          (zu,
-            (⟨t, u⟩ :
-              (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: logu) = z.1 := by
-        simpa using congrArg Prod.fst hzEq
-      have hzlog :
-          (⟨t, u⟩ :
-            (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: logu = z.1.2 := by
-        simpa using congrArg Prod.snd hz1
-      have hzqc : qcu = Function.update z.2 t (z.2 t - 1) := by
-        simpa using congrArg Prod.snd hzEq
-      have hlen : logu.length ≤ ∑ q : (Oracle M S C).Domain, qcu q :=
-        ih u (z := ((zu, logu), qcu)) hzu
-      have hsum :
-          ∑ q : (Oracle M S C).Domain, Function.update z.2 t (z.2 t - 1) q =
-            (∑ q : (Oracle M S C).Domain, z.2 q) - 1 := by
-        let qpred : QueryCount (Oracle M S C).Domain :=
-          Function.update z.2 t (z.2 t - 1)
-        have hpredsucc : Function.update qpred t (qpred t + 1) = z.2 := by
-          funext j
-          by_cases hj : j = t
-          · subst hj
-            simp [qpred]
-            omega
-          · simp [qpred, Function.update, hj]
-        have hsumsucc := sum_update_succ_count (counts := qpred) t
-        rw [hpredsucc] at hsumsucc
-        dsimp [qpred] at hsumsucc
-        omega
-      rw [hzqc, hsum] at hlen
-      have hsumpos : 0 < ∑ q : (Oracle M S C).Domain, z.2 q := by
-        exact Nat.lt_of_lt_of_le (Nat.pos_of_ne_zero hz0)
-          (Finset.single_le_sum (fun _ _ => Nat.zero_le _) (Finset.mem_univ t))
-      have hcons :
-          ((⟨t, u⟩ :
-            (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: logu).length
-              ≤ ∑ q : (Oracle M S C).Domain, z.2 q := by
-        have hlt : logu.length < ∑ q : (Oracle M S C).Domain, z.2 q :=
-          lt_of_le_of_lt hlen (Nat.sub_lt hsumpos (by simp))
-        simpa using Nat.succ_le_of_lt hlt
-      simpa [hzlog] using hcons
-
-private lemma log_length_le_of_mem_support_run_cached_logging
-    {α : Type} [DecidableEq M] [DecidableEq S] [DecidableEq C]
-    [Fintype M] [Fintype S] [Fintype C]
-    [Inhabited M] [Inhabited S] [Inhabited C]
-    {oa : OracleComp (Oracle M S C) α} {n : ℕ}
-    (hbound : IsTotalQueryBound oa n)
-    (cache₀ : QueryCache (Oracle M S C))
-    {z : (α × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C)}
-    (hz : z ∈ support
-      ((simulateQ cachingOracle ((simulateQ loggingOracle oa).run)).run cache₀)) :
-    z.1.2.length ≤ n := by
-  let cost : QueryCache (Oracle M S C) → ℕ := fun _ => 0
-  have hstep :
-      ∀ t : (Oracle M S C).Domain, ∀ st : QueryCache (Oracle M S C),
-        ∀ x : (Oracle M S C).Range t × QueryCache (Oracle M S C),
-          x ∈ support ((cachingOracle (spec := Oracle M S C) t).run st) →
-            cost x.2 ≤ cost st + 1 := by
-    intro t st x hx
-    simp [cost]
-  rcases countingOracle.exists_mem_support_simulate_of_mem_support_run_simulateQ_le_cost
-      (spec := Oracle M S C)
-      (ι := (Oracle M S C).Domain)
-      (impl := cachingOracle)
-      cost hstep hz with ⟨qc, hqc, _⟩
-  have hlen :
-      z.1.2.length ≤ ∑ q : (Oracle M S C).Domain, qc q :=
-    log_length_le_of_mem_support_counting_simulate_run_logging
-      (M := M) (S := S) (C := C) oa hqc
-  have hboundLog :
-      IsTotalQueryBound ((simulateQ loggingOracle oa).run) n :=
-    (isTotalQueryBound_run_simulateQ_loggingOracle_iff
-      (spec := Oracle M S C) oa n).2 hbound
-  have hqc_le : (∑ q : (Oracle M S C).Domain, qc q) ≤ n :=
-    IsTotalQueryBound.counting_total_le
-      (spec := Oracle M S C)
-      (ι := (Oracle M S C).Domain)
-      (oa := (simulateQ loggingOracle oa).run)
-      (n := n)
-      hboundLog hqc
-  exact le_trans hlen hqc_le
-
 private theorem traceKnownLabels_card_le_extractabilityCountingTerm_of_commit_support
     {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -965,8 +735,8 @@ private theorem traceKnownLabels_card_le_extractabilityCountingTerm_of_commit_su
       (depth := depth) commitment commitTrace).card ≤
       extractabilityCountingTerm depth A.t₁ := by
   have hlen : commitTrace.length ≤ A.t₁ :=
-    log_length_le_of_mem_support_run_cached_logging
-      (M := M) (S := S) (C := C)
+    OracleComp.log_length_le_of_mem_support_run_cached_logging
+      (spec := Oracle M S C)
       (oa := A.commit) A.commitBound ∅
       (by simpa [extractabilityWitnessCommitPart] using hx)
   unfold extractabilityCountingTerm
@@ -994,8 +764,7 @@ private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
       (simulateQ cachingOracle
         (extractabilityWitnessRest (M := M) (S := S) (C := C)
           A commitment aux commitTrace)).run cache₁] ≤
-      ((((A.t₂ + depth + 1) * extractabilityCountingTerm depth A.t₁ : ℕ) : ℝ≥0∞) *
-        (Fintype.card C : ℝ≥0∞)⁻¹) := by
+      extractabilityFreshHitTerm C depth A.t₁ A.t₂ := by
   classical
   let targets :=
     traceKnownLabels (M := M) (S := S) (C := C)
@@ -1045,16 +814,15 @@ private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
             (simulateQ cachingOracle rest).run cache₁] := hbad_le
     _ ≤ ((((A.t₂ + (depth + 1)) * targets.card : ℕ) : ℝ≥0∞) *
           (Fintype.card C : ℝ≥0∞)⁻¹) := hfresh
-    _ ≤ ((((A.t₂ + depth + 1) * extractabilityCountingTerm depth A.t₁ : ℕ) :
-          ℝ≥0∞) *
-          (Fintype.card C : ℝ≥0∞)⁻¹) := by
+    _ ≤ extractabilityFreshHitTerm C depth A.t₁ A.t₂ := by
         have hnat :
             (A.t₂ + (depth + 1)) * targets.card ≤
               (A.t₂ + depth + 1) * extractabilityCountingTerm depth A.t₁ := by
           have hsum : A.t₂ + (depth + 1) = A.t₂ + depth + 1 := by omega
           rw [hsum]
           exact Nat.mul_le_mul_left _ htargets
-        exact mul_le_mul_right' (by exact_mod_cast hnat) _
+        unfold extractabilityFreshHitTerm
+        gcongr
 
 /-- ROM bad-event estimate for the selected-witness extractability game.
 
@@ -1086,11 +854,8 @@ private theorem witnessBadEventROM_game_bound {depth t : ℕ}
       (simulateQ cachingOracle
         (extractabilityWitnessRest (M := M) (S := S) (C := C)
           A x.1.1.1 x.1.1.2 x.1.2)).run x.2
-  let ε₁ : ℝ≥0∞ :=
-    ((A.t₁ ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
-  let ε₂ : ℝ≥0∞ :=
-    ((((A.t₂ + depth + 1) * extractabilityCountingTerm depth A.t₁ : ℕ) :
-      ℝ≥0∞) * (Fintype.card C : ℝ≥0∞)⁻¹)
+  let ε₁ : ℝ≥0∞ := extractabilityBirthdayTerm C A.t₁
+  let ε₂ : ℝ≥0∞ := extractabilityFreshHitTerm C depth A.t₁ A.t₂
   have hCdefault :
       0 < Fintype.card ((Oracle M S C).Range default) := by
     simpa [merkleOracleRange_card_eq (M := M) (S := S) (C := C) default] using hC
@@ -1108,7 +873,8 @@ private theorem witnessBadEventROM_game_bound {depth t : ℕ}
               (M := M) (S := S) (C := C) A)
         hCdefault
         (merkleOracleRange_card_le (M := M) (S := S) (C := C))
-    simpa [ε₁, merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
+    simpa [ε₁, extractabilityBirthdayTerm,
+      merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
       not_not] using hbirthday
   have hrest :
       ∀ x ∈ support ((simulateQ cachingOracle commitPart).run ∅),
@@ -1136,7 +902,8 @@ private theorem witnessBadEventROM_game_bound {depth t : ℕ}
       hcommit hrest
   rw [extractabilityWitnessGame_eq, extractabilityWitnessInner_eq_bind,
     simulateQ_bind, StateT.run_bind]
-  simpa [commitPart, restPart, ε₁, ε₂, extractabilityErrorTerm, not_not] using hcombine
+  simpa [commitPart, restPart, ε₁, ε₂, extractabilityErrorTerm,
+    extractabilityBirthdayTerm, extractabilityFreshHitTerm, not_not] using hcombine
 
 /-- Conditional witness-game extractability combiner specialized to
 `extractabilityWitnessGame`. The hypothesis is the bad-event estimate for the
@@ -1165,8 +932,10 @@ single-commitment bad events.
 
 Lean event/game: `WitnessExtractabilityWinROM` in `extractabilityWitnessGame`.
 
-Bound expression: `extractabilityErrorTerm C depth A.t₁ A.t₂`, whose verifier
-contribution is one authentication path, `depth + 1`.
+Bound expression: with `d = depth` and `|C| = 2^λ`,
+`extractabilityErrorTerm C d A.t₁ A.t₂` expands to
+`A.t₁^2 / (2 * |C|)
+ + (A.t₂ + d + 1) * min (2 * A.t₁ + 1, 2^(d + 1)) / |C|`.
 
 Scope note: this is the selected-witness ROM theorem, not the full-batch
 verifier theorem. -/
@@ -1192,7 +961,13 @@ Lean event/game: `ExtractabilityWin` and `BadEvent` over an arbitrary
 full-batch transcript distribution.
 
 Scope note: this is intentionally conditional. A caller must separately prove
-the probability estimate for the full-batch bad event. -/
+the probability estimate for the full-batch bad event. This wrapper is
+specialized to `extractabilityErrorTerm C depth A.t₁ A.t₂`; a theorem matching
+the full-batch textbook macro should first prove its own bad-event estimate and
+then instantiate the more general `extractability_bound_of_badEvent_bound`.
+The textbook target for that separate estimate is
+`MTExtractabilityExpression(λ, q, L, d) =
+  1/2 * (q - 1) * q / 2^λ + (d + 1) * 2L / 2^λ`. -/
 theorem extractability_bound_of_textbook_badEvent_bound {depth t : ℕ}
     [DecidableEq C] [Fintype C]
     [Inhabited M] [Inhabited S] [Inhabited C]

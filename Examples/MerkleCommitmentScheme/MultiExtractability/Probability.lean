@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: OpenAI Codex
 -/
 
-import Examples.MerkleCommitmentScheme.MultiExtractability.Basic
+import Examples.MerkleCommitmentScheme.MultiExtractability.QueryBound
 import Examples.MerkleCommitmentScheme.Extractability.Probability
 import Examples.CommitmentScheme.Support.Probability
 
@@ -668,19 +668,7 @@ theorem multi_extractability_win_le_selected_sum {depth t n : ℕ}
           multiExtractabilityStatefulWitnessGame (M := M) (S := S) (C := C) A] := by
             rfl
 
-/-- Simple multi-extractability estimate for the selected-witness ROM game.
-
-Textbook statement: selected-coordinate multi-extractability by union bound.
-
-Lean event/game: `MultiExtractabilityWinROM` in `multiExtractabilityGame`.
-
-Bound expression: `multiExtractabilityErrorTerm C depth A.t₁ A.t₂ n`, namely
-`n * extractabilityErrorTerm C depth A.t₁ A.t₂`.
-
-Scope note: the event is the selected opening failure for the commitment chosen
-by the adversary. It explicitly does not include the tighter textbook
-equal-commitment/different-extracted-tree branch. -/
-theorem multi_extractability_bound {depth t n : ℕ}
+private theorem multi_extractability_bound_stateful {depth t n : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -699,12 +687,40 @@ theorem multi_extractability_bound {depth t n : ℕ}
           multi_extractability_win_le_selected_sum (M := M) (S := S) (C := C) A
     _ ≤ ∑ k ∈ (Finset.univ : Finset (Fin n)),
         extractabilityErrorTerm C depth A.t₁ A.t₂ := by
-          exact Finset.sum_le_sum fun k _hk =>
-            by
-              simpa [multiExtractabilityGame, MultiExtractabilitySelectedWinROM] using
-                stateful_selected_branch_bound (M := M) (S := S) (C := C)
-                  (AUX := AUX) A k hC
+          exact Finset.sum_le_sum fun k _hk => by
+            simpa [multiExtractabilityGame, MultiExtractabilitySelectedWinROM] using
+              stateful_selected_branch_bound (M := M) (S := S) (C := C)
+                (AUX := AUX) A k hC
     _ = multiExtractabilityErrorTerm C depth A.t₁ A.t₂ n := by
         simp [multiExtractabilityErrorTerm]
+
+/-- Simple multi-extractability estimate for the selected-witness ROM game.
+
+Textbook statement: selected-coordinate multi-extractability by union bound.
+
+Lean event/game: `MultiExtractabilityWinROM` in `multiExtractabilityGame`.
+
+Bound expression: `multiExtractabilityErrorTerm C depth A.t₁ A.t₂ n`, namely
+`n * extractabilityErrorTerm C depth A.t₁ A.t₂`.
+
+Textbook comparison: with `d = depth`, `L = 2^d`, and `|C| = 2^λ`,
+`MTMultiExtractabilityExpression(λ, q, L, d, n) =
+  3/2 * (q - 1) * q / 2^λ
+  + (d + 1) * 2L / 2^λ
+  + (n - 1) * q / 2^λ`.
+
+Scope note: the event is the selected opening failure for the commitment chosen
+by the adversary. It explicitly does not include the tighter textbook
+equal-commitment/different-extracted-tree branch. -/
+theorem multi_extractability_bound {depth t n : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : MultiExtractAdversary M S C AUX depth n t)
+    (hC : 0 < Fintype.card C) :
+    Pr[MultiExtractabilityWinROM (M := M) (S := S) (C := C) |
+      multiExtractabilityGame (M := M) (S := S) (C := C) A] ≤
+      multiExtractabilityErrorTerm C depth A.t₁ A.t₂ n := by
+  exact multi_extractability_bound_stateful (M := M) (S := S) (C := C) A hC
 
 end MerkleTree

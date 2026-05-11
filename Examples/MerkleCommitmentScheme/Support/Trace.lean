@@ -90,6 +90,15 @@ def logEval (f : OracleFn M S C) (oa : OracleComp (Oracle M S C) α) :
     α × QueryLog (Oracle M S C) :=
   (simulateQ ((QueryImpl.ofFn f).withLogging) oa).run
 
+/-- The value component of fixed-oracle logging is fixed-oracle evaluation. -/
+theorem logEval_fst_eq_eval (f : OracleFn M S C)
+    (oa : OracleComp (Oracle M S C) α) :
+    (logEval f oa).1 = eval f oa := by
+  unfold logEval eval
+  have h :=
+    QueryImpl.fst_map_run_withLogging (QueryImpl.ofFn f) oa
+  simpa using h
+
 @[simp] theorem eval_query (f : OracleFn M S C) (t : (Oracle M S C).Domain) :
     eval f (liftM (query (spec := Oracle M S C) t)) = f t := rfl
 

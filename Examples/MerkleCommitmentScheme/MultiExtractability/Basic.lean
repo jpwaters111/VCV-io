@@ -42,6 +42,11 @@ stateful theorem proved in this module family, not the tighter textbook
 multi-extractability expression with the equal-commitment/different-tree branch.
 
 Bound expression: `n * extractabilityErrorTerm C depth t₁ t₂`.
+Textbook notation instead gives the tighter macro
+`MTMultiExtractabilityExpression(λ, q, L, d, n) =
+  3/2 * (q - 1) * q / 2^λ
+  + (d + 1) * 2L / 2^λ
+  + (n - 1) * q / 2^λ`, where `L = 2^depth`.
 -/
 noncomputable def multiExtractabilityErrorTerm (C : Type) [Fintype C]
     (depth t₁ t₂ n : ℕ) : ℝ≥0∞ :=
@@ -199,36 +204,6 @@ def emptyOpeningData {depth : ℕ} : OpeningData M S C depth where
   I := ∅
   message := fun i => False.elim (Finset.notMem_empty i.1 i.2)
   proof := fun i => False.elim (Finset.notMem_empty i.1 i.2)
-
-/-- Project a stateful multi adversary onto a fixed commitment coordinate. The
-projected adversary preserves the shared commit phase and returns an empty
-opening unless the multi adversary selected the projected coordinate. -/
-noncomputable def projectMultiExtractAdversary
-    [DecidableEq M] [DecidableEq S] [DecidableEq C]
-    [Inhabited M] [Inhabited S] [Inhabited C]
-    {depth n t : ℕ}
-    (A : MultiExtractAdversary M S C AUX depth n t) (k : Fin n) :
-    ExtractAdversary M S C ((Fin n → C) × AUX) depth t where
-  commit := do
-    let out ← A.commit
-    pure (out.1 k, out)
-  open_ := fun out => do
-    let opening ← A.open_ out.2
-    if opening.1 = k then
-      pure opening.2
-    else
-      pure (emptyOpeningData (M := M) (S := S) (C := C) (depth := depth))
-  t₁ := A.t₁
-  t₂ := A.t₂
-  totalBound := A.totalBound
-  commitBound := by
-    exact isTotalQueryBound_bind (n₁ := A.t₁) (n₂ := 0)
-      A.commitBound (fun _ => trivial)
-  openBound := by
-    intro out
-    exact isTotalQueryBound_bind (n₁ := A.t₂) (n₂ := 0)
-      (A.openBound out.2) (fun _ => by
-        split <;> trivial)
 
 /-- The selected-coordinate branch of the stateful game. -/
 def StatefulSelectedWin

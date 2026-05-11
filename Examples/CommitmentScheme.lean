@@ -7,3 +7,15 @@ import Examples.CommitmentScheme.Common
 import Examples.CommitmentScheme.Binding
 import Examples.CommitmentScheme.Extractability
 import Examples.CommitmentScheme.Hiding
+
+/-!
+# Basic Commitment Scheme
+
+Public aggregator for the basic random-oracle commitment example.
+
+The main textbook-facing bounds are:
+
+* `binding_bound`, with bound `cmBindingErrorTerm C t`;
+* `extractability_bound`, with bound `cmExtractabilityErrorTerm C t`;
+* `hiding_bound_finite`, with bound `cmHidingErrorTerm S t`.
+-/

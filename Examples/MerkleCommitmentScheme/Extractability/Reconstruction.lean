@@ -60,14 +60,6 @@ private theorem honestTrace_contains_single {depth : ℕ} [DecidableEq C]
       f commitment I message proof i)
     hsubset
 
-private theorem logEval_fst_eq_eval {α : Type} (f : OracleFn M S C)
-    (oa : OracleComp (Oracle M S C) α) :
-    (logEval f oa).1 = eval f oa := by
-  unfold logEval eval
-  have h :=
-    QueryImpl.fst_map_run_withLogging (QueryImpl.ofFn f) oa
-  simpa using h
-
 private theorem leaf_query_unique_of_no_commit_collision {depth : ℕ}
     (x : ExtractTranscript M S C AUX depth)
     (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) x)

@@ -22,6 +22,24 @@ such that for every `t`-query two-phase adversary A = (A_commit, A_open):
 The extractor E scans the commit-phase query-answer trace for an entry
 whose answer matches the commitment c. -/
 
+/-- Basic commitment extractability error term.
+
+Textbook statement: this is the concrete ROM bound proved below for the
+two-phase extractability game when `3 ≤ t`.
+
+Lean event/game: `z.1 = true` in `extractabilityGame CMExtract A`.
+
+Bound expression: with `|C| = 2^λ`,
+
+`(t * (t - 1) + 2) / (2 * |C|)`.
+
+The proof exposes the split
+`t * (t - 1) / (2 * |C|) + 1 / |C|`: a commit-trace birthday term plus one
+fresh post-commit hit. -/
+noncomputable def cmExtractabilityErrorTerm (C : Type) [Fintype C]
+    (t : ℕ) : ℝ≥0∞ :=
+  ((t * (t - 1) + 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
+
 /-- An extractability adversary with two phases. -/
 structure ExtractAdversary (M : Type) (S : Type) (C : Type) (AUX : Type) (t : ℕ)
     [DecidableEq M] [DecidableEq S] where
@@ -193,20 +211,9 @@ The inner computation consists of:
 2. `A.open_ aux` — `t₂` queries
 3. `query (m, s)` — 1 verification query
 
-Total: `t₁ + t₂ + 1 ≤ t + 1`.
-
-**Status**: sorry — requires two pieces of missing infrastructure:
-1. `IsTotalQueryBound` preservation through `simulateQ loggingOracle ... .run`:
-   `loggingOracle` passes all queries through unchanged, so the query bound
-   should transfer. But `IsTotalQueryBound` is defined structurally via
-   `OracleComp.construct`, and `simulateQ loggingOracle` wraps each query in
-   `WriterT` machinery that changes the syntactic structure. A lemma like
-   `IsTotalQueryBound ((simulateQ loggingOracle oa).run) n ↔ IsTotalQueryBound oa n`
-   would require induction showing the `WriterT.run` / `loggingOracle` composition
-   preserves the structural query bound.
-2. Composition of bounds through dependent bind: the open phase depends on `aux`
-   from the commit phase, requiring `isTotalQueryBound_bind` with the existential
-   intermediate result. -/
+Total: `t₁ + t₂ + 1 ≤ t + 1`. The proof uses
+`isTotalQueryBound_run_simulateQ_loggingOracle_iff` for the logging layer and
+then composes the open and verifier-query bounds through dependent bind. -/
 private lemma extractabilityInner_totalBound {t : ℕ}
     (A : ExtractAdversary M S C AUX t) :
     IsTotalQueryBound (extractabilityInner A) (t + 1) := by
@@ -472,6 +479,8 @@ private lemma extractability_num_le
       rw [Nat.mul_comm (t - 1) (t - t₁), ← Nat.add_mul, Nat.add_sub_of_le ht₁_le]
 
 set_option maxHeartbeats 400000 in
+-- The rest computation is unfolded through several cached/logged binds; the
+-- raised limit keeps the proof local instead of splitting out a one-off helper.
 /-- The post-commit/open extractability computation for a fixed commit outcome. -/
 private def extractabilityRestOa {t : ℕ}
     (A : ExtractAdversary M S C AUX t)
@@ -485,6 +494,8 @@ private def extractabilityRestOa {t : ℕ}
       | none => (c == cm))
 
 set_option maxHeartbeats 400000 in
+-- This pointwise support proof normalizes both extractor cases and cache-origin
+-- facts, which is substantially heavier than the surrounding arithmetic lemmas.
 /-- Under a collision-free commit cache, any extractability win must create a fresh
 post-commit cache entry equal to the commitment value. -/
 private lemma extractability_rest_win_implies_fresh_cm {t : ℕ}
@@ -586,6 +597,8 @@ private lemma extractability_rest_win_implies_fresh_cm {t : ℕ}
       exact ⟨(m, s), c, hcache₃, hcache₁_none, heq_of_eq hc_eq⟩
 
 set_option maxHeartbeats 1000000 in
+-- The probability proof reuses the pointwise freshness lemma and then exposes
+-- enough structure for `probEvent_cache_has_value_le_of_noCollision`.
 /-- Conditioned on a collision-free commit trace, the later extractability failure
 probability is bounded by the fresh-hit term `(t₂ + 1) / |C|`. -/
 private lemma extractability_rest_noCollision_le_inv {t : ℕ}
@@ -682,13 +695,19 @@ private lemma extractability_win_le_textbook_bound {t : ℕ} (ht : 3 ≤ t)
           simpa [Nat.mul_one, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using
             add_div_two_card (C := C) (t * (t - 1)) 1
 
-/-- **Extractability theorem (Lemma cm-extractability)**: for `t ≥ 3`,
-`Pr[win] ≤ (t(t-1)+2) / (2|C|)`. Combines the case-split decomposition
-`extractability_win_le_textbook_bound` with arithmetic. -/
+/-- **Extractability theorem (Lemma cm-extractability)**.
+
+For `3 ≤ t`, the two-phase extractability failure probability is bounded by
+`cmExtractabilityErrorTerm C t`.
+
+Bound expression: `(t * (t - 1) + 2) / (2 * |C|)`. This combines the
+case-split decomposition `extractability_win_le_textbook_bound` with the final
+arithmetic normalization. -/
 theorem extractability_bound {t : ℕ} (ht : 3 ≤ t)
     (A : ExtractAdversary M S C AUX t) :
     Pr[fun z => z.1 = true | extractabilityGame CMExtract A] ≤
-    ((t * (t - 1) + 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C) := by
+    cmExtractabilityErrorTerm C t := by
+  unfold cmExtractabilityErrorTerm
   calc Pr[fun z => z.1 = true | extractabilityGame CMExtract A]
       ≤ ((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card C) +
         (Fintype.card C : ℝ≥0∞)⁻¹ := extractability_win_le_textbook_bound ht A

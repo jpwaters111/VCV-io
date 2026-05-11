@@ -315,10 +315,10 @@ noncomputable def bindingTextbookWitnessGame
 /-- Conservative whole-cache binding error term for the ordinary witness game.
 
 This is the bound used by the unconditional `binding_bound`: all adversary and
-selected-verifier queries are charged to one birthday term. It is easier to use
-than the textbook split, but looser:
+selected-verifier queries are charged to one birthday term. With `d = depth`
+and `|C| = 2^λ`, it is easier to use than the textbook split, but looser:
 
-`(t + 2 * (depth + 1))^2 / (2 * |C|)`.
+`(t + 2 * (d + 1))^2 / (2 * |C|)`.
 
 Lean event/game: `BindingWitnessWinROM` in `bindingWitnessGame`.
 
@@ -329,13 +329,29 @@ noncomputable def bindingWitnessErrorTerm (C : Type) [Fintype C]
     (depth t : ℕ) : ℝ≥0∞ :=
   ((t + 2 * (depth + 1)) ^ 2 : ℕ) / (2 * Fintype.card C)
 
+/-- Adversary-cache birthday summand in the split Merkle binding bound. -/
+noncomputable def bindingBirthdayTerm (C : Type) [Fintype C]
+    (t : ℕ) : ℝ≥0∞ :=
+  ((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
+
+/-- Selected-verifier-path cross-collision summand in the split Merkle binding
+bound. For a tree of depth `d`, each selected `checkSingle` trace has
+`d + 1` oracle queries, so the product bound contributes
+`(d + 1)^2 / |C|`. -/
+noncomputable def bindingVerifierErrorTerm (C : Type) [Fintype C]
+    (depth : ℕ) : ℝ≥0∞ :=
+  (((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C
+
 /-- Textbook split binding error term for the origin-aware witness game.
 
 This is the formula used in the proof of `lemma:mt-binding`: birthday collision
 in the adversary cache plus a cross-collision between the two selected
-authentication paths:
+authentication paths. With `d = depth` and `|C| = 2^λ`, the split term is:
 
-`t * (t - 1) / (2 * |C|) + (depth + 1)^2 / |C|`.
+`t * (t - 1) / (2 * |C|) + (d + 1)^2 / |C|`.
+
+The compact textbook macro is
+`MTBindingExpression(λ, q) = 1/2 * q^2 / 2^λ`.
 
 Lean event/game: `BindingTextbookWinROM` in `bindingTextbookWitnessGame`.
 
@@ -344,19 +360,34 @@ ordinary witness game uses `bindingWitnessErrorTerm`.
 -/
 noncomputable def bindingErrorTerm (C : Type) [Fintype C]
     (depth t : ℕ) : ℝ≥0∞ :=
-  ((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card C) +
-    (((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C
+  bindingBirthdayTerm C t + bindingVerifierErrorTerm C depth
+
+/-- Compact textbook binding expression.
+
+Textbook macro:
+
+`MTBindingExpression(λ, q) = 1/2 * q^2 / 2^λ`.
+
+Lean expression: `bindingTextbookErrorTerm C q = q^2 / (2 * |C|)`,
+where `|C| = 2^λ`. This is an arithmetic corollary target for
+`bindingErrorTerm`, not the conservative ordinary witness-game term. -/
+noncomputable def bindingTextbookErrorTerm (C : Type) [Fintype C]
+    (t : ℕ) : ℝ≥0∞ :=
+  (((t ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C))
 
 /-- The exact witness-game binding error term implies the compact textbook
 expression once the adversary query budget dominates the selected verifier
-cross term. This is the arithmetic side of `lemma:mt-binding`; the ROM side is
-the still-separate proof that the witness game is bounded by
-`bindingErrorTerm`. -/
+cross term. In textbook notation this proves the step from
+`t(t - 1)/(2 * |C|) + (d + 1)^2 / |C|` to
+`MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`, assuming
+`2 * (d + 1)^2 <= t`. -/
 theorem bindingErrorTerm_le_textbook {depth t : ℕ} [Fintype C]
     (hlarge : 2 * (depth + 1) ^ 2 ≤ t) :
-    bindingErrorTerm C depth t ≤
-      (((t ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)) := by
+    bindingErrorTerm C depth t ≤ bindingTextbookErrorTerm C t := by
+  unfold bindingTextbookErrorTerm
   unfold bindingErrorTerm
+  unfold bindingBirthdayTerm
+  unfold bindingVerifierErrorTerm
   let d := depth + 1
   let N := Fintype.card C
   change (((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * (N : ℝ≥0∞))) +

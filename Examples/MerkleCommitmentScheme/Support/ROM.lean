@@ -78,6 +78,78 @@ theorem traceEntryAnswer_mem_merkleLogAnswerTargets [DecidableEq C]
   exact List.mem_toFinset.mpr
     (List.mem_map.mpr ⟨entry, hentry, rfl⟩)
 
+/-- Cached logged executions replay exactly under any final cache extension.
+
+This is the Merkle-specialized bridge from the operational cached ROM run to
+the deterministic `logEval` view used by fixed-oracle collision proofs. -/
+theorem logEval_oracleFnOfCache_eq_of_cached_logging {α : Type}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype C] [Inhabited C]
+    (oa : OracleComp (Oracle M S C) α)
+    {cache₀ cacheFinal : QueryCache (Oracle M S C)}
+    {z : (α × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C)}
+    (hz : z ∈ support
+      ((simulateQ cachingOracle ((simulateQ loggingOracle oa).run)).run cache₀))
+    (hmono : z.2 ≤ cacheFinal) :
+    logEval (M := M) (S := S) (C := C)
+      (oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal) oa = z.1 := by
+  induction oa using OracleComp.inductionOn generalizing z cache₀ cacheFinal with
+  | pure x =>
+      simp [logEval] at hz
+      subst z
+      rfl
+  | query_bind t mx ih =>
+      have hzWhole := hz
+      rw [OracleComp.run_simulateQ_loggingOracle_query_bind (spec := Oracle M S C)] at hz
+      rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
+      simp only [Set.mem_iUnion] at hz
+      rcases hz with ⟨⟨u, cache₁⟩, _hquery, hcont⟩
+      rw [simulateQ_map] at hcont
+      change z ∈ support
+        ((fun p : (α × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C) =>
+            ((p.1.1,
+              (⟨t, u⟩ :
+                (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: p.1.2),
+              p.2)) <$>
+          ((simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run)).run cache₁))
+        at hcont
+      rw [support_map] at hcont
+      rcases hcont with ⟨w, hw, hzw⟩
+      rcases w with ⟨⟨value, tailLog⟩, cache₂⟩
+      have hzEq :
+          z = ((value, (⟨t, u⟩ :
+              (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: tailLog),
+            cache₂) := by
+        simpa using hzw.symm
+      subst z
+      have hmonoTail : cache₂ ≤ cacheFinal := by
+        simpa using hmono
+      have hentryInCache : cache₂ t = some u := by
+        exact
+          (OracleComp.log_entry_in_cache_and_mono
+            (spec := Oracle M S C) (liftM (query t) >>= mx) cache₀
+            ((value,
+              (⟨t, u⟩ :
+                (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: tailLog),
+              cache₂)
+            hzWhole).1
+            (⟨t, u⟩ :
+              (i : (Oracle M S C).Domain) × (Oracle M S C).Range i)
+            (by simp)
+      have hcacheFinal : cacheFinal t = some u := hmono hentryInCache
+      have htail :
+          logEval (M := M) (S := S) (C := C)
+            (oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal) (mx u) =
+            (value, tailLog) := by
+        exact ih u (z := ((value, tailLog), cache₂)) (cache₀ := cache₁)
+          (cacheFinal := cacheFinal) hw hmonoTail
+      have hu :
+          oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal t = u := by
+        simpa using
+          oracleFnOfCache_apply_of_some (M := M) (S := S) (C := C)
+            (cache := cacheFinal) (t := t) (v := u) hcacheFinal
+      simp [logEval_bind, logEval_query, hu, htail]
+
 /-- Merkle-specialized fresh-hit bound for a finite target set.
 
 Textbook statement: a post-commit computation with at most `n` queries hits one

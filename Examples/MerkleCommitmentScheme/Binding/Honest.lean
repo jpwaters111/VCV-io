@@ -158,10 +158,13 @@ Lean event/game: `HonestBindingTextbookWinROM` in
 `honestBindingTextbookGame`, after packaging the honest opening as the second
 binding branch.
 
-Bound expression: `bindingErrorTerm C depth t`.
+Bound expression: `bindingErrorTerm C depth t`, namely
+`t * (t - 1) / (2 * |C|) + (depth + 1)^2 / |C|`.
 
 Scope note: the budget `t` already includes the honest Merkle commit
-construction. -/
+construction. The textbook honest-binding macro is
+`MTHonestBindingExpression(λ, q, L) = 1/2 * (q + 2L)^2 / 2^λ`; for the perfect
+binary Lean tree, `L = 2^depth`. -/
 theorem honest_binding_bound_conditioned {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -181,10 +184,13 @@ witness game.
 Lean event/game: same conditioned event as
 `honest_binding_bound_conditioned`.
 
-Bound expression: `t^2 / (2 * |C|)` under
+Bound expression: `bindingTextbookErrorTerm C t = t^2 / (2 * |C|)` under
 `2 * (depth + 1)^2 <= t`.
 
-Scope note: the budget `t` includes the honest commit cost. -/
+Scope note: the budget `t` includes the honest commit cost. This is the compact
+`MTBindingExpression`-style corollary for the packaged total budget, not the
+adversary-only macro `MTHonestBindingExpression(λ, q, L) =
+1/2 * (q + 2L)^2 / 2^λ`. -/
 theorem honest_binding_bound_textbook_conditioned {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -194,7 +200,7 @@ theorem honest_binding_bound_textbook_conditioned {depth t : ℕ}
     (hlarge : 2 * (depth + 1) ^ 2 ≤ t) :
     Pr[fun z => HonestBindingTextbookWinROM (M := M) (S := S) (C := C) z |
       honestBindingTextbookGame (M := M) (S := S) (C := C) A] ≤
-      (((t ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)) :=
+      bindingTextbookErrorTerm C t :=
   le_trans
     (honest_binding_bound_conditioned (M := M) (S := S) (C := C) A hC)
     (bindingErrorTerm_le_textbook (C := C) (depth := depth) (t := t) hlarge)
@@ -207,10 +213,14 @@ witness game.
 Lean event/game: `HonestBindingWinROM` in `honestBindingGame`.
 
 Bound expression: `bindingWitnessErrorTerm C depth t`, the conservative
-whole-cache term from `binding_bound`.
+whole-cache term from `binding_bound`:
+`(t + 2 * (depth + 1))^2 / (2 * |C|)`.
 
 Scope note: `t` already includes the honest `commitWithSalts` cost via
-`HonestBindingAdversary.totalBound`. -/
+`HonestBindingAdversary.totalBound`. The textbook honest-binding macro instead
+separates adversary budget `q` from honest commit cost:
+`MTHonestBindingExpression(λ, q, L) = 1/2 * (q + 2L)^2 / 2^λ`, with
+`L = 2^depth`. -/
 theorem honest_binding_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]

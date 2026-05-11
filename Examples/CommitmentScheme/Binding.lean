@@ -22,6 +22,22 @@ variable {M S C : Type}
 The adversary and Check use the **same** random oracle H. We model this by
 running the entire game (adversary + verification) inside `simulateQ cachingOracle`. -/
 
+/-- Basic commitment binding error term.
+
+Textbook statement: this is the concrete bound proved below for the cached ROM
+binding game.
+
+Lean event/game: `z.1 = true` in `bindingGame A`.
+
+Bound expression: with `|C| = 2^λ`,
+
+`(t * (t - 1) + 2) / (2 * |C|)`.
+
+The `t * (t - 1) / (2 * |C|)` part is the adversary-cache birthday term; the
+extra `2 / (2 * |C|) = 1 / |C|` part is the fresh verification hit. -/
+noncomputable def cmBindingErrorTerm (C : Type) [Fintype C] (t : ℕ) : ℝ≥0∞ :=
+  ((t * (t - 1) + 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
+
 /-- A binding adversary with query bound `t`. -/
 structure BindingAdversary (M : Type) (S : Type) (C : Type) (t : ℕ)
     [DecidableEq M] [DecidableEq S] where
@@ -60,7 +76,6 @@ private lemma bindingGame_eq {t : ℕ} (A : BindingAdversary M S C t) :
 
 /-- `simulateQ cachingOracle (liftM (query idx))` equals `cachingOracle idx` as StateT actions.
 This follows from `simulateQ_query` with `cont = id`. -/
-
 private lemma binding_win_implies_collision {t : ℕ} (A : BindingAdversary M S C t) :
     ∀ z ∈ support ((simulateQ cachingOracle (bindingInner A)).run ∅),
       z.1 = true → CacheHasCollision z.2 := by
@@ -115,7 +130,6 @@ private lemma bindingInner_totalBound {t : ℕ} (A : BindingAdversary M S C t) :
   exact ⟨Nat.one_pos, fun _ => trivial⟩
 
 /-- In a collision-free cache, a value determines at most one query input. -/
-
 private lemma binding_rest_noCollision_le_inv
     (c : C) (m₀ m₁ : M) (s₀ s₁ : S)
     (cache₁ : QueryCache (CMOracle M S C))
@@ -260,13 +274,17 @@ private lemma binding_win_le_advCollision_add_fresh {t : ℕ}
         rintro ⟨⟨c, m₀, s₀, m₁, s₁⟩, cache₁⟩ _ hno
         simpa [restPart] using binding_rest_noCollision_le_inv c m₀ m₁ s₀ s₁ cache₁ hno))
 
-/-- **Binding theorem (Lemma cm-binding)**: `Pr[win] ≤ (t(t-1)+2) / (2|C|)`.
+/-- **Binding theorem (Lemma cm-binding)**.
 
 Decomposes via `binding_win_le_advCollision_add_fresh` into birthday bound on the
-adversary's `t` queries (`t(t-1)/(2|C|)`) plus unpredictability (`1/|C|`). -/
+adversary's `t` queries (`t(t-1)/(2|C|)`) plus unpredictability (`1/|C|`).
+
+Bound expression: `cmBindingErrorTerm C t =
+(t * (t - 1) + 2) / (2 * |C|)`. -/
 theorem binding_bound {t : ℕ} (A : BindingAdversary M S C t) :
     Pr[fun z => z.1 = true | bindingGame A] ≤
-    ((t * (t - 1) + 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C) := by
+    cmBindingErrorTerm C t := by
+  unfold cmBindingErrorTerm
   calc Pr[fun z => z.1 = true | bindingGame A]
       ≤ Pr[fun z => CacheHasCollision z.2 | (simulateQ cachingOracle A.run).run ∅] +
         (Fintype.card C : ℝ≥0∞)⁻¹ := binding_win_le_advCollision_add_fresh A

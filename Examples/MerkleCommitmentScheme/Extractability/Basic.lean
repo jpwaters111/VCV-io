@@ -353,10 +353,29 @@ noncomputable def WitnessBadEventROM {depth : ℕ} [DecidableEq C]
 The extractor can learn at most `2 * t₁ + 1` labels from a `t₁`-query commit
 trace, and the full perfect tree has at most `2^(depth + 1)` labels.
 
-Bound expression: `min (2 * t₁ + 1) (2^(depth + 1))`. This is the target-list
-size in the fresh-hit part of `extractabilityErrorTerm`. -/
+Bound expression: `min (2 * t₁ + 1, 2^(depth + 1))`. This is the number of
+known non-dummy labels that a fresh post-commit query can hit. Textbook
+notation writes the full tree size as `2L`; here the perfect binary tree has
+`L = 2^depth` leaves and `2^(depth + 1)` possible labels. -/
 def extractabilityCountingTerm (depth t₁ : ℕ) : ℕ :=
   min (2 * t₁ + 1) (2 ^ (depth + 1))
+
+/-- Commit-trace birthday summand in the selected-witness Merkle
+extractability bound. -/
+noncomputable def extractabilityBirthdayTerm (C : Type) [Fintype C]
+    (t₁ : ℕ) : ℝ≥0∞ :=
+  ((t₁ ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
+
+/-- Post-commit fresh-hit summand in the selected-witness Merkle
+extractability bound.
+
+The first factor is the post-commit query budget: adversary open phase plus one
+selected verifier path. The second factor is the number of known labels that a
+fresh query could hit. -/
+noncomputable def extractabilityFreshHitTerm (C : Type) [Fintype C]
+    (depth t₁ t₂ : ℕ) : ℝ≥0∞ :=
+  (((t₂ + depth + 1) * extractabilityCountingTerm depth t₁ : ℕ) : ℝ≥0∞) *
+    (Fintype.card C : ℝ≥0∞)⁻¹
 
 /-- Selected-witness single-commitment extractability error expression.
 
@@ -365,20 +384,22 @@ selected-witness single-commitment experiment.
 
 Lean event/game: `extractabilityWitnessGame` and `WitnessBadEventROM`.
 
-Bound expression:
+Bound expression, with `d = depth` and `|C| = 2^λ`:
 
 * commit-trace birthday term: `t₁^2 / (2 * |C|)`;
 * fresh-hit term:
-  `(t₂ + depth + 1) * extractabilityCountingTerm depth t₁ / |C|`.
+  `(t₂ + d + 1) * min (2 * t₁ + 1, 2^(d + 1)) / |C|`.
+
+The textbook full-batch macro is
+`MTExtractabilityExpression(λ, q, L, d) =
+  1/2 * (q - 1) * q / 2^λ + (d + 1) * 2L / 2^λ`.
 
 Scope note: `depth + 1` is one selected verifier path, not a full batch
 verifier cost.
 -/
 noncomputable def extractabilityErrorTerm (C : Type) [Fintype C]
     (depth t₁ t₂ : ℕ) : ℝ≥0∞ :=
-  ((t₁ ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C) +
-    (((t₂ + depth + 1) * extractabilityCountingTerm depth t₁ : ℕ) : ℝ≥0∞) *
-      (Fintype.card C : ℝ≥0∞)⁻¹
+  extractabilityBirthdayTerm C t₁ + extractabilityFreshHitTerm C depth t₁ t₂
 
 @[simp] theorem extractabilityGame_eq {depth t : ℕ} [DecidableEq C] [DecidableEq M] [DecidableEq S]
     [Inhabited M] [Inhabited S] [Inhabited C]

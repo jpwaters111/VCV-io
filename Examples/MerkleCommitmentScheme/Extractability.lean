@@ -22,9 +22,12 @@ selected-witness game `MerkleTree.extractabilityWitnessGame`. The adversary may
 open a batch, but the game selects one mismatching opened index and logs only
 that `checkSingle` verifier path.
 
-Bound expression: `MerkleTree.extractabilityErrorTerm C depth t₁ t₂` is the sum
-of the commit-trace birthday term `t₁^2 / (2 * |C|)` and the fresh-hit term
-`(t₂ + depth + 1) * min (2 * t₁ + 1) (2^(depth + 1)) / |C|`.
+Bound expression: with `d = depth` and `|C| = 2^λ`, Lean proves the
+selected-witness term
+`t₁^2 / (2 * |C|) + (t₂ + d + 1) * min (2 * t₁ + 1, 2^(d + 1)) / |C|`.
+The textbook full-batch macro is
+`MTExtractabilityExpression(λ, q, L, d) =
+  1/2 * (q - 1) * q / 2^λ + (d + 1) * 2L / 2^λ`.
 
 Scope note: this public theorem is the selected-witness ROM theorem. The
 full-batch theorem surface is the conditional combiner

@@ -61,6 +61,39 @@ lemma isTotalQueryBound_bind {oa : OracleComp spec α} {ob : α → OracleComp s
       rw [heq] at h3
       exact h3
 
+private lemma sum_update_pred' [DecidableEq ι] [Fintype ι]
+    {qb : ι → ℕ} {t : ι} (ht : 0 < qb t) :
+    ∑ i, Function.update qb t (qb t - 1) i = (∑ i, qb i) - 1 := by
+  have hsub : ∑ i, Function.update qb t (qb t - 1) i + 1 = (∑ i, qb i) := by
+    rw [← Finset.add_sum_erase Finset.univ (fun i => Function.update qb t (qb t - 1) i)
+      (Finset.mem_univ t)]
+    simp only [Function.update_self]
+    conv_rhs => rw [← Finset.add_sum_erase Finset.univ qb (Finset.mem_univ t)]
+    have herase : ∑ x ∈ Finset.univ.erase t,
+        Function.update qb t (qb t - 1) x = ∑ x ∈ Finset.univ.erase t, qb x := by
+      apply Finset.sum_congr rfl
+      intro i hi
+      rw [Function.update_of_ne (Finset.ne_of_mem_erase hi)]
+    rw [herase]
+    omega
+  omega
+
+/-- Per-index query bounds imply the corresponding total query bound. -/
+theorem IsTotalQueryBound.of_perIndex [DecidableEq ι] [Fintype ι] {α : Type u}
+    {oa : OracleComp spec α} {qb : ι → ℕ}
+    (h : IsPerIndexQueryBound oa qb) :
+    IsTotalQueryBound oa (∑ i, qb i) := by
+  induction oa using OracleComp.inductionOn generalizing qb with
+  | pure _ => exact trivial
+  | query_bind t mx ih =>
+    rw [isPerIndexQueryBound_query_bind_iff] at h
+    rw [isTotalQueryBound_query_bind_iff]
+    have hpos : 0 < ∑ i, qb i :=
+      Nat.lt_of_lt_of_le h.1 (Finset.single_le_sum (fun i _ => Nat.zero_le _) (Finset.mem_univ t))
+    refine ⟨hpos, fun u => ?_⟩
+    rw [← sum_update_pred' h.1]
+    exact ih u (h.2 u)
+
 lemma not_isTotalQueryBound_bind_query_prefix_zero
     {oa : OracleComp spec α}
     {next : α → spec.Domain}

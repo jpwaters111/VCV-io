@@ -13,6 +13,18 @@ variable {M S C : Type}
   [DecidableEq M] [DecidableEq S] [DecidableEq C]
   [Fintype M] [Fintype S] [Fintype C]
   [Inhabited M] [Inhabited S] [Inhabited C]
+
+/-- Basic commitment hiding error term.
+
+Textbook statement: the salt-hiding theorem averages over the uniformly sampled
+salt and bounds the real/simulated statistical distance by `t / |S|`.
+
+Lean event/game: `hidingMixedReal A` versus `hidingMixedSim A`.
+
+Bound expression: `t / |S|`, where `|S|` is the salt-space cardinality. -/
+noncomputable def cmHidingErrorTerm (S : Type) [Fintype S] (t : ℕ) : ℝ :=
+  (t : ℝ) / (Fintype.card S : ℝ)
+
 private lemma tvDist_liftComp_hidingAvgSpec {α : Type}
     (oa ob : OracleComp (CMOracle M S C) α) :
     tvDist
@@ -35,7 +47,8 @@ implicitly averages over the uniform salt. -/
 theorem hiding_bound_avg {AUX : Type} {t : ℕ}
     (A : HidingAdversary M S C AUX t) :
     (∑ s : S, tvDist (hidingReal A s) (hidingSim A s)) / (Fintype.card S : ℝ) ≤
-    (t : ℝ) / (Fintype.card S : ℝ) := by
+    cmHidingErrorTerm S t := by
+  unfold cmHidingErrorTerm
   apply div_le_div_of_nonneg_right _ (Nat.cast_nonneg _)
   -- Step 1: tvDist ≤ Pr[bad] for each s (already proved)
   have h1 : ∀ s : S, tvDist (hidingReal A s) (hidingSim A s) ≤
@@ -66,7 +79,7 @@ theorem hiding_bound_finite {AUX : Type} {t : ℕ}
     (A : HidingAdversary M S C AUX t) :
     tvDist (hidingMixedReal (M := M) (S := S) (C := C) A)
       (hidingMixedSim (M := M) (S := S) (C := C) A) ≤
-    (t : ℝ) / (Fintype.card S : ℝ) := by
+    cmHidingErrorTerm S t := by
   have hbind :
       tvDist (hidingMixedReal (M := M) (S := S) (C := C) A)
           (hidingMixedSim (M := M) (S := S) (C := C) A) ≤
@@ -111,4 +124,4 @@ theorem hiding_bound_finite {AUX : Type} {t : ℕ}
           simp [ENNReal.toReal_inv, ENNReal.toReal_natCast]
     _ = (∑ s : S, tvDist (hidingReal A s) (hidingSim A s)) / (Fintype.card S : ℝ) := by
           rw [div_eq_mul_inv, mul_comm]
-    _ ≤ (t : ℝ) / (Fintype.card S : ℝ) := hiding_bound_avg (M := M) (S := S) (C := C) A
+    _ ≤ cmHidingErrorTerm S t := hiding_bound_avg (M := M) (S := S) (C := C) A

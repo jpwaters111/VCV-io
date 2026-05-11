@@ -109,7 +109,7 @@ lemma log_length_le_of_mem_support_counting_simulate_run_logging
       subst z
       simp
   | query_bind t mx ih =>
-      rw [run_simulateQ_loggingOracle_query_bind] at hz
+      rw [_root_.run_simulateQ_loggingOracle_query_bind] at hz
       rw [countingOracle.mem_support_simulate_queryBind_iff] at hz
       obtain ⟨hz0, u, hz⟩ := hz
       have hmap :
@@ -359,7 +359,7 @@ theorem run_cached_logging_proj_eq_cachingOracle
   | pure x =>
       simp [simulateQ_pure]
   | query_bind t mx ih =>
-      rw [run_simulateQ_loggingOracle_query_bind]
+      rw [_root_.run_simulateQ_loggingOracle_query_bind]
       rw [simulateQ_query_bind, StateT.run_bind, simulateQ_query_bind, StateT.run_bind]
       cases ht : cache₀ t with
       | some u =>
@@ -1063,4 +1063,3 @@ theorem sum_probEvent_hidingBad_le {AUX : Type} {t : ℕ}
                   simp
     _ = t := by
         rw [ENNReal.tsum_mul_right, HasEvalPMF.tsum_probOutput_eq_one, one_mul]
-

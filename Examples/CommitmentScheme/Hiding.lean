@@ -7,3 +7,13 @@ import Examples.CommitmentScheme.Hiding.Defs
 import Examples.CommitmentScheme.Hiding.CountBounds
 import Examples.CommitmentScheme.Hiding.LoggingBounds
 import Examples.CommitmentScheme.Hiding.Main
+
+/-!
+# Basic Commitment Scheme — Hiding
+
+Public aggregator for the hiding game definitions, counted/logged query bounds,
+and final statistical-distance theorem.
+
+The main bound is `hiding_bound_finite`, stated with the named expression
+`cmHidingErrorTerm S t = t / |S|`.
+-/

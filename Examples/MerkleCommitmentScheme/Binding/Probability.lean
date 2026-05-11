@@ -238,7 +238,7 @@ private theorem secondVerifierFreshHit_bound_of_first_log
         (merkleLogAnswerTargets (M := M) (S := S) (C := C) single₀.2)
         cache₁ z |
       (simulateQ cachingOracle ((simulateQ loggingOracle check₁).run)).run cache₁] ≤
-      ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C) := by
+      bindingVerifierErrorTerm C depth := by
   classical
   let targets := merkleLogAnswerTargets (M := M) (S := S) (C := C) single₀.2
   have hlogBound₁ :
@@ -271,9 +271,9 @@ private theorem secondVerifierFreshHit_bound_of_first_log
     _ ≤ ((((depth + 1) * (depth + 1) : ℕ) : ℝ≥0∞) *
             (Fintype.card C : ℝ≥0∞)⁻¹) := by
           gcongr
-    _ = ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C) := by
-          rw [Nat.pow_two]
-          simp [ENNReal.div_eq_inv_mul, mul_assoc, mul_comm, mul_left_comm]
+    _ = bindingVerifierErrorTerm C depth := by
+          simp [bindingVerifierErrorTerm, Nat.pow_two, ENNReal.div_eq_inv_mul,
+            mul_comm]
 
 private theorem bindingTextbookRestCreatedEvent_second_bound
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -302,7 +302,7 @@ private theorem bindingTextbookRestCreatedEvent_second_bound
                single₀? := some single₀
                single₁? := some single₁ } :
               BindingTextbookWitnessTranscript M S C depth))).run cache₁] ≤
-      ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C) := by
+      bindingVerifierErrorTerm C depth := by
   classical
   by_cases hnoCache₁ : ¬ CacheHasCollision cache₁
   · have hrun :
@@ -401,7 +401,7 @@ private theorem bindingTextbookWitnessRest_restCreatedEvent_bound
       (simulateQ cachingOracle
         (bindingTextbookWitnessRest (M := M) (S := S) (C := C)
           commitCache out)).run commitCache] ≤
-      ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C) := by
+      bindingVerifierErrorTerm C depth := by
   classical
   unfold bindingTextbookWitnessRest bindingWitnessRest
   cases hsel : selectBindingMismatchWitness? (M := M) (S := S) (C := C) out with
@@ -486,7 +486,7 @@ private theorem bindingTextbookWitnessRest_restCreatedEvent_bound
                      single₀? := some single₀
                      single₁? := some single₁ } :
                     BindingTextbookWitnessTranscript M S C depth))).run commitCache] ≤
-          ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C)
+          bindingVerifierErrorTerm C depth
       rw [simulateQ_bind, StateT.run_bind]
       refine OracleComp.probEvent_bind_le_of_forall_support ?_
       intro z hz
@@ -495,93 +495,6 @@ private theorem bindingTextbookWitnessRest_restCreatedEvent_bound
         bindingTextbookRestCreatedEvent_second_bound
           (M := M) (S := S) (C := C)
           out commitCache w check₀ check₁ hz hbound₀ hbound₁ hnoCommit
-
-private theorem logEval_fst_eq_eval {α : Type} (f : OracleFn M S C)
-    (oa : OracleComp (Oracle M S C) α) :
-    (logEval f oa).1 = eval f oa := by
-  unfold logEval eval
-  have h := QueryImpl.fst_map_run_withLogging (QueryImpl.ofFn f) oa
-  simpa using h
-
-private lemma run_simulateQ_loggingOracle_query_bind_merkle {α : Type}
-    (t : (Oracle M S C).Domain)
-    (mx : (Oracle M S C).Range t → OracleComp (Oracle M S C) α) :
-    (simulateQ loggingOracle (liftM (query t) >>= mx)).run =
-      (query t : OracleComp (Oracle M S C) _) >>= fun u =>
-        (fun p : α × QueryLog (Oracle M S C) =>
-          (p.1, (⟨t, u⟩ :
-            (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: p.2))
-          <$> (simulateQ loggingOracle (mx u)).run := by
-  simp [loggingOracle, QueryImpl.withLogging, OracleQuery.cont_query,
-    Prod.map, Function.id_def, Function.comp]
-
-private theorem logEval_oracleFnOfCache_eq_of_cached_logging {α : Type}
-    [DecidableEq M] [DecidableEq S] [DecidableEq C]
-    [Fintype C] [Inhabited C]
-    (oa : OracleComp (Oracle M S C) α)
-    {cache₀ cacheFinal : QueryCache (Oracle M S C)}
-    {z : (α × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C)}
-    (hz : z ∈ support
-      ((simulateQ cachingOracle ((simulateQ loggingOracle oa).run)).run cache₀))
-    (hmono : z.2 ≤ cacheFinal) :
-    logEval (M := M) (S := S) (C := C)
-      (oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal) oa = z.1 := by
-  induction oa using OracleComp.inductionOn generalizing z cache₀ cacheFinal with
-  | pure x =>
-      simp [logEval] at hz
-      subst z
-      rfl
-  | query_bind t mx ih =>
-      have hzWhole := hz
-      rw [run_simulateQ_loggingOracle_query_bind_merkle] at hz
-      rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
-      simp only [Set.mem_iUnion] at hz
-      rcases hz with ⟨⟨u, cache₁⟩, hquery, hcont⟩
-      rw [simulateQ_map] at hcont
-      change z ∈ support
-        ((fun p : (α × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C) =>
-            ((p.1.1,
-              (⟨t, u⟩ :
-                (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: p.1.2),
-              p.2)) <$>
-          ((simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run)).run cache₁))
-        at hcont
-      rw [support_map] at hcont
-      rcases hcont with ⟨w, hw, hzw⟩
-      rcases w with ⟨⟨value, tailLog⟩, cache₂⟩
-      have hzEq :
-          z = ((value, (⟨t, u⟩ :
-              (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: tailLog),
-            cache₂) := by
-        simpa using hzw.symm
-      subst z
-      have hmonoTail : cache₂ ≤ cacheFinal := by
-        simpa using hmono
-      have hentryInCache : cache₂ t = some u := by
-        exact
-          (OracleComp.log_entry_in_cache_and_mono
-            (spec := Oracle M S C) (liftM (query t) >>= mx) cache₀
-            ((value,
-              (⟨t, u⟩ :
-                (i : (Oracle M S C).Domain) × (Oracle M S C).Range i) :: tailLog),
-              cache₂)
-            hzWhole).1
-            (⟨t, u⟩ :
-              (i : (Oracle M S C).Domain) × (Oracle M S C).Range i)
-            (by simp)
-      have hcacheFinal : cacheFinal t = some u := hmono hentryInCache
-      have htail :
-          logEval (M := M) (S := S) (C := C)
-            (oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal) (mx u) =
-            (value, tailLog) := by
-        exact ih u (z := ((value, tailLog), cache₂)) (cache₀ := cache₁)
-          (cacheFinal := cacheFinal) hw hmonoTail
-      have hu :
-          oracleFnOfCache (M := M) (S := S) (C := C) cacheFinal t = u := by
-        simpa using
-          oracleFnOfCache_apply_of_some (M := M) (S := S) (C := C)
-            (cache := cacheFinal) (t := t) (v := u) hcacheFinal
-      simp [logEval_bind, logEval_query, hu, htail]
 
 private theorem bindingWitnessRest_win_implies_logCrossEvent_of_support
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -997,7 +910,7 @@ private theorem bindingWitnessGame_bound_of_rest_logCrossEvent_bound {depth t : 
             BindingWitnessRestLogCrossEvent (M := M) (S := S) (C := C) z |
             (simulateQ cachingOracle
               (bindingWitnessRest (M := M) (S := S) (C := C) out)).run cache₁] ≤
-            ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C)) :
+            bindingVerifierErrorTerm C depth) :
     Pr[ fun z => BindingWitnessWinROM (M := M) (S := S) (C := C) z |
       bindingWitnessGame (M := M) (S := S) (C := C) A] ≤
       bindingErrorTerm C depth t := by
@@ -1008,10 +921,8 @@ private theorem bindingWitnessGame_bound_of_rest_logCrossEvent_bound {depth t : 
     fun x : BindingOutput M S C depth × QueryCache (Oracle M S C) =>
       (simulateQ cachingOracle
         (bindingWitnessRest (M := M) (S := S) (C := C) x.1)).run x.2
-  let ε₁ : ℝ≥0∞ :=
-    ((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
-  let ε₂ : ℝ≥0∞ :=
-    (((depth + 1) ^ 2 : ℕ) / Fintype.card C)
+  let ε₁ : ℝ≥0∞ := bindingBirthdayTerm C t
+  let ε₂ : ℝ≥0∞ := bindingVerifierErrorTerm C depth
   have hCdefault :
       0 < Fintype.card ((Oracle M S C).Range default) := by
     simpa [merkleOracleRange_card_eq (M := M) (S := S) (C := C) default] using hC
@@ -1027,7 +938,8 @@ private theorem bindingWitnessGame_bound_of_rest_logCrossEvent_bound {depth t : 
           simpa [commitPart, bindingWitnessCommitPart] using A.queryBound)
         hCdefault
         (merkleOracleRange_card_le (M := M) (S := S) (C := C))
-    simpa [ε₁, merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
+    simpa [ε₁, bindingBirthdayTerm,
+      merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
       not_not] using hbirthday
   have hrestWin :
       ∀ x ∈ support ((simulateQ cachingOracle commitPart).run ∅),
@@ -1060,12 +972,13 @@ private theorem bindingWitnessGame_bound_of_rest_logCrossEvent_bound {depth t : 
   rw [bindingWitnessGame, bindingWitnessInner_eq_bind (M := M) (S := S) (C := C) A,
     simulateQ_bind, StateT.run_bind]
   simpa [commitPart, restPart, ε₁, ε₂, bindingWitnessCommitPart,
-    bindingErrorTerm, not_not] using hcombine
+    bindingErrorTerm, bindingBirthdayTerm, bindingVerifierErrorTerm,
+    not_not] using hcombine
 
 /-- Conditional textbook combiner for the origin-aware witness game.
 
-The hypothesis is the still-missing rest-phase estimate: once the adversary
-cache is collision-free, the conditioned selected-check win is bounded by the
+The hypothesis is the rest-phase estimate: once the adversary cache is
+collision-free, the conditioned selected-check win is bounded by the
 single-pair verifier term. -/
 theorem bindingTextbookWitnessGame_bound_of_rest_win_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -1085,7 +998,7 @@ theorem bindingTextbookWitnessGame_bound_of_rest_win_bound {depth t : ℕ}
             (simulateQ cachingOracle
               (bindingTextbookWitnessRest (M := M) (S := S) (C := C)
                 cache₁ out)).run cache₁] ≤
-            ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C)) :
+            bindingVerifierErrorTerm C depth) :
     Pr[ fun z => BindingTextbookWinROM (M := M) (S := S) (C := C) z |
       bindingTextbookWitnessGame (M := M) (S := S) (C := C) A] ≤
       bindingErrorTerm C depth t := by
@@ -1096,10 +1009,8 @@ theorem bindingTextbookWitnessGame_bound_of_rest_win_bound {depth t : ℕ}
     fun x : BindingOutput M S C depth × QueryCache (Oracle M S C) =>
       (simulateQ cachingOracle
         (bindingTextbookWitnessRest (M := M) (S := S) (C := C) x.2 x.1)).run x.2
-  let ε₁ : ℝ≥0∞ :=
-    ((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
-  let ε₂ : ℝ≥0∞ :=
-    (((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C
+  let ε₁ : ℝ≥0∞ := bindingBirthdayTerm C t
+  let ε₂ : ℝ≥0∞ := bindingVerifierErrorTerm C depth
   have hCdefault :
       0 < Fintype.card ((Oracle M S C).Range default) := by
     simpa [merkleOracleRange_card_eq (M := M) (S := S) (C := C) default] using hC
@@ -1115,7 +1026,8 @@ theorem bindingTextbookWitnessGame_bound_of_rest_win_bound {depth t : ℕ}
           simpa [commitPart, bindingWitnessCommitPart] using A.queryBound)
         hCdefault
         (merkleOracleRange_card_le (M := M) (S := S) (C := C))
-    simpa [ε₁, merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
+    simpa [ε₁, bindingBirthdayTerm,
+      merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
       not_not] using hbirthday
   have hrestWin :
       ∀ x ∈ support ((simulateQ cachingOracle commitPart).run ∅),
@@ -1144,7 +1056,8 @@ theorem bindingTextbookWitnessGame_bound_of_rest_win_bound {depth t : ℕ}
       hcommit hrestWin
   rw [bindingTextbookWitnessGame]
   simpa [commitPart, restPart, ε₁, ε₂, bindingWitnessCommitPart,
-    bindingErrorTerm, not_not] using hcombine
+    bindingErrorTerm, bindingBirthdayTerm, bindingVerifierErrorTerm,
+    not_not] using hcombine
 
 /-- Conditional textbook combiner using the precise rest-created cross-collision
 event. This is the form consumed by the final product-bound ROM lemma. -/
@@ -1166,7 +1079,7 @@ theorem bindingTextbookWitnessGame_bound_of_restCreatedEvent_bound {depth t : �
             (simulateQ cachingOracle
               (bindingTextbookWitnessRest (M := M) (S := S) (C := C)
                 cache₁ out)).run cache₁] ≤
-            ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C)) :
+            bindingVerifierErrorTerm C depth) :
     Pr[ fun z => BindingTextbookWinROM (M := M) (S := S) (C := C) z |
       bindingTextbookWitnessGame (M := M) (S := S) (C := C) A] ≤
       bindingErrorTerm C depth t := by
@@ -1217,7 +1130,7 @@ theorem binding_bound_textbook_of_witnessGame_bound {depth t : ℕ}
         bindingErrorTerm C depth t) :
     Pr[ fun z => BindingWitnessWinROM (M := M) (S := S) (C := C) z |
       bindingWitnessGame (M := M) (S := S) (C := C) A] ≤
-      (((t ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)) :=
+      bindingTextbookErrorTerm C t :=
   le_trans
     (binding_bound_of_witnessGame_bound (M := M) (S := S) (C := C) A hbound)
     (bindingErrorTerm_le_textbook (C := C) (depth := depth) (t := t) hlarge)
@@ -1229,9 +1142,12 @@ the selected verifier paths charged separately.
 
 Lean event/game: `BindingTextbookWinROM` in `bindingTextbookWitnessGame`.
 
-Bound expression:
+Bound expression, with `d = depth` and `|C| = 2^λ`:
 
-`t * (t - 1) / (2 * |C|) + (depth + 1)^2 / |C|`.
+`t * (t - 1) / (2 * |C|) + (d + 1)^2 / |C|`.
+
+The corresponding compact textbook macro is
+`MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`.
 
 Scope note: `BindingTextbookWinROM` includes origin-aware side conditions
 needed to charge only rest-created verifier collisions. Use `binding_bound` for
@@ -1259,8 +1175,9 @@ cross term.
 
 Lean event/game: same conditioned event as `binding_bound_conditioned`.
 
-Bound expression: `t^2 / (2 * |C|)` under
-`2 * (depth + 1)^2 <= t`. -/
+Bound expression: `bindingTextbookErrorTerm C t = t^2 / (2 * |C|)` under
+`2 * (depth + 1)^2 <= t`. In textbook notation this is
+`MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`. -/
 theorem binding_bound_textbook_conditioned {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -1270,7 +1187,7 @@ theorem binding_bound_textbook_conditioned {depth t : ℕ}
     (hlarge : 2 * (depth + 1) ^ 2 ≤ t) :
     Pr[fun z => BindingTextbookWinROM (M := M) (S := S) (C := C) z |
       bindingTextbookWitnessGame (M := M) (S := S) (C := C) A] ≤
-      (((t ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)) :=
+      bindingTextbookErrorTerm C t :=
   le_trans
     (binding_bound_conditioned (M := M) (S := S) (C := C) A hC)
     (bindingErrorTerm_le_textbook (C := C) (depth := depth) (t := t) hlarge)
@@ -1286,7 +1203,8 @@ Bound expression: the conservative whole-cache birthday term
 
 Scope note: this theorem is unconditional for the ordinary witness game. Its
 term is intentionally looser than the origin-aware split theorem
-`binding_bound_conditioned`. -/
+`binding_bound_conditioned`, and it is not the textbook macro
+`MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`. -/
 theorem binding_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
