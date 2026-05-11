@@ -365,7 +365,7 @@ private theorem logContains_checkSingle_of_leaf_and_internal_mem {depth : ℕ}
   · rcases hinternalEntry with ⟨layer, hentryEq⟩
     simpa [hentryEq] using hinternal layer
 
-private theorem exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
+private theorem exists_known_answer_not_mem_commitTrace_of_missing_internal
     {depth : ℕ} [DecidableEq M] [DecidableEq S] [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
@@ -374,6 +374,114 @@ private theorem exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
       eval f
         (checkSingle (M := M) (S := S) (C := C)
           x.commitment idx message authPath) = true)
+    (hmissingInternal :
+      ∃ layer : Fin depth,
+        (⟨checkInternalQuery (M := M) (S := S) (C := C)
+            f idx message authPath layer,
+          f (checkInternalQuery (M := M) (S := S) (C := C)
+            f idx message authPath layer)⟩ :
+          (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) ∉
+          x.commitTrace) :
+    ∃ entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t,
+      entry ∈
+        (logEval f
+          (checkSingle (M := M) (S := S) (C := C)
+            x.commitment idx message authPath)).2 ∧
+      entry ∉ x.commitTrace ∧
+      traceEntryAnswer (M := M) (S := S) (C := C) entry ∈
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) x.commitment x.commitTrace := by
+  classical
+  let internalEntry (layer : Fin depth) :
+      (t : (Oracle M S C).Domain) × (Oracle M S C).Range t :=
+    ⟨checkInternalQuery (M := M) (S := S) (C := C)
+        f idx message authPath layer,
+      f (checkInternalQuery (M := M) (S := S) (C := C)
+        f idx message authPath layer)⟩
+  let missingSet : Finset (Fin depth) :=
+    Finset.univ.filter fun layer => internalEntry layer ∉ x.commitTrace
+  have hsetNonempty : missingSet.Nonempty := by
+    rcases hmissingInternal with ⟨layer, hmissing⟩
+    exact ⟨layer, by simp [missingSet, internalEntry, hmissing]⟩
+  let layer : Fin depth := missingSet.min' hsetNonempty
+  let n : ℕ := layer.1
+  have hlayerMem : layer ∈ missingSet := Finset.min'_mem _ _
+  have hmissing : internalEntry layer ∉ x.commitTrace := by
+    simpa [missingSet, layer] using (Finset.mem_filter.mp hlayerMem).2
+  have hprefix :
+      ∀ internalLayer : Fin depth, internalLayer.1 < n →
+        internalEntry internalLayer ∈ x.commitTrace := by
+    intro internalLayer hlt
+    by_contra hnot
+    have hmemSet : internalLayer ∈ missingSet := by
+      simp [missingSet, hnot]
+    have hminLe := Finset.min'_le missingSet internalLayer hmemSet
+    have hminLeNat : layer.1 ≤ internalLayer.1 := by
+      exact hminLe
+    dsimp [n] at hlt
+    omega
+  let parentLayer : Fin (depth + 1) :=
+    ⟨n, Nat.lt_of_lt_of_le layer.2 (Nat.le_succ depth)⟩
+  have hknownGet :
+      (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
+        (depth := depth) x.commitment x.commitTrace n parentLayer).get
+          (pathPos idx parentLayer) =
+        some (checkPathLabel f idx message authPath parentLayer) := by
+    exact
+      path_label_known_after_passes_of_internal_prefix
+        (M := M) (S := S) (C := C) (AUX := AUX)
+        f x idx message authPath hcoll hcheck n parentLayer.2
+        (fun internalLayer hlt => hprefix internalLayer hlt)
+  have htarget :
+      checkPathLabel f idx message authPath parentLayer ∈
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) x.commitment x.commitTrace := by
+    exact knownLabels_after_passes_subset_traceKnownLabels
+      (M := M) (S := S) (C := C)
+      (depth := depth) x.commitment x.commitTrace n (by omega)
+        ((mem_knownLabels_iff (C := C)
+          (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
+            (depth := depth) x.commitment x.commitTrace n)
+          (checkPathLabel f idx message authPath parentLayer)).mpr
+          ⟨parentLayer, pathPos idx parentLayer, hknownGet⟩)
+  refine ⟨internalEntry layer, ?_, hmissing, ?_⟩
+  · exact checkInternalQuery_mem_logEval_checkSingle
+      (M := M) (S := S) (C := C)
+      f x.commitment idx message authPath layer
+  · have hanswer :=
+      checkInternalQueryAnswer_eq_checkPathLabel_parent
+        (M := M) (S := S) (C := C) f idx message authPath layer
+    have htraceAnswer₀ :
+        traceEntryAnswer (M := M) (S := S) (C := C) (internalEntry layer) =
+          checkInternalQueryAnswer (M := M) (S := S) (C := C)
+            f idx message authPath layer := by
+      simpa [internalEntry] using
+        traceEntryAnswer_checkInternalQuery
+          (M := M) (S := S) (C := C) f idx message authPath layer
+    have htraceAnswer :
+        traceEntryAnswer (M := M) (S := S) (C := C) (internalEntry layer) =
+          checkPathLabel f idx message authPath parentLayer := by
+      rw [htraceAnswer₀, hanswer]
+    rw [htraceAnswer]
+    exact htarget
+
+private theorem exists_known_answer_not_mem_commitTrace_of_missing_leaf
+    {depth : ℕ} [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
+    (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
+    (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) x)
+    (hcheck :
+      eval f
+        (checkSingle (M := M) (S := S) (C := C)
+          x.commitment idx message authPath) = true)
+    (hallInternal :
+      ∀ layer : Fin depth,
+        (⟨checkInternalQuery (M := M) (S := S) (C := C)
+            f idx message authPath layer,
+          f (checkInternalQuery (M := M) (S := S) (C := C)
+            f idx message authPath layer)⟩ :
+          (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) ∈
+          x.commitTrace)
     (hescape :
       ¬ LogContains
         (logEval f
@@ -400,133 +508,113 @@ private theorem exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
         f idx message authPath layer,
       f (checkInternalQuery (M := M) (S := S) (C := C)
         f idx message authPath layer)⟩
-  by_cases hmissingInternal :
-      ∃ layer : Fin depth, internalEntry layer ∉ x.commitTrace
-  · let missingSet : Finset (Fin depth) :=
-      Finset.univ.filter fun layer => internalEntry layer ∉ x.commitTrace
-    have hsetNonempty : missingSet.Nonempty := by
-      rcases hmissingInternal with ⟨layer, hmissing⟩
-      exact ⟨layer, by simp [missingSet, hmissing]⟩
-    let layer : Fin depth := missingSet.min' hsetNonempty
-    let n : ℕ := layer.1
-    have hlayerMem : layer ∈ missingSet := Finset.min'_mem _ _
-    have hmissing : internalEntry layer ∉ x.commitTrace := by
-      simpa [missingSet, layer] using (Finset.mem_filter.mp hlayerMem).2
-    have hprefix :
-        ∀ internalLayer : Fin depth, internalLayer.1 < n →
-          internalEntry internalLayer ∈ x.commitTrace := by
-      intro internalLayer hlt
-      by_contra hnot
-      have hmemSet : internalLayer ∈ missingSet := by
-        simp [missingSet, hnot]
-      have hminLe := Finset.min'_le missingSet internalLayer hmemSet
-      have hminLeNat : layer.1 ≤ internalLayer.1 := by
-        exact hminLe
-      dsimp [n] at hlt
-      omega
-    let parentLayer : Fin (depth + 1) :=
-      ⟨n, Nat.lt_of_lt_of_le layer.2 (Nat.le_succ depth)⟩
-    have hknownGet :
-        (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
-          (depth := depth) x.commitment x.commitTrace n parentLayer).get
-            (pathPos idx parentLayer) =
-          some (checkPathLabel f idx message authPath parentLayer) := by
-      exact
-        path_label_known_after_passes_of_internal_prefix
-          (M := M) (S := S) (C := C) (AUX := AUX)
-          f x idx message authPath hcoll hcheck n parentLayer.2
-          (fun internalLayer hlt => hprefix internalLayer hlt)
-    have htarget :
-        checkPathLabel f idx message authPath parentLayer ∈
+  have hleafMissing : leafEntry ∉ x.commitTrace := by
+    intro hleaf
+    exact hescape
+      (logContains_checkSingle_of_leaf_and_internal_mem
+        (M := M) (S := S) (C := C)
+        f x.commitment idx message authPath x.commitTrace
+        (by simpa [leafEntry] using hleaf)
+        (fun layer => by simpa [internalEntry] using hallInternal layer))
+  have hknownGet :
+      (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
+        (depth := depth) x.commitment x.commitTrace depth
+        ⟨depth, Nat.lt_succ_self depth⟩).get
+          (pathPos idx ⟨depth, Nat.lt_succ_self depth⟩) =
+        some (checkPathLabel f idx message authPath
+          ⟨depth, Nat.lt_succ_self depth⟩) := by
+    exact
+      path_label_known_after_passes_of_internal_prefix
+        (M := M) (S := S) (C := C) (AUX := AUX)
+        f x idx message authPath hcoll hcheck depth (Nat.lt_succ_self depth)
+        (fun internalLayer _ => by
+          simpa [internalEntry] using hallInternal internalLayer)
+  have htarget :
+      f (checkLeafQuery (M := M) (S := S) (C := C) message authPath) ∈
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) x.commitment x.commitTrace := by
+    have htargetPath :
+        checkPathLabel f idx message authPath ⟨depth, Nat.lt_succ_self depth⟩ ∈
+          traceKnownLabels (M := M) (S := S) (C := C)
+            (depth := depth) x.commitment x.commitTrace :=
+      knownLabels_after_passes_subset_traceKnownLabels
+        (M := M) (S := S) (C := C)
+        (depth := depth) x.commitment x.commitTrace depth (by omega)
+        ((mem_knownLabels_iff (C := C)
+          (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
+            (depth := depth) x.commitment x.commitTrace depth)
+          (checkPathLabel f idx message authPath
+            ⟨depth, Nat.lt_succ_self depth⟩)).mpr
+          ⟨⟨depth, Nat.lt_succ_self depth⟩,
+            pathPos idx ⟨depth, Nat.lt_succ_self depth⟩, hknownGet⟩)
+    have hleafEq :=
+      checkPathLabel_leaf_eq_leafQuery
+        (M := M) (S := S) (C := C) f idx message authPath
+    have htargetLast :
+        checkPathLabel f idx message authPath (Fin.last depth) ∈
           traceKnownLabels (M := M) (S := S) (C := C)
             (depth := depth) x.commitment x.commitTrace := by
-      exact knownLabels_after_passes_subset_traceKnownLabels
-        (M := M) (S := S) (C := C)
-        (depth := depth) x.commitment x.commitTrace n (by omega)
-          ((mem_knownLabels_iff (C := C)
-            (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
-              (depth := depth) x.commitment x.commitTrace n)
-            (checkPathLabel f idx message authPath parentLayer)).mpr
-            ⟨parentLayer, pathPos idx parentLayer, hknownGet⟩)
-    refine ⟨internalEntry layer, ?_, hmissing, ?_⟩
-    · exact checkInternalQuery_mem_logEval_checkSingle
-        (M := M) (S := S) (C := C)
-        f x.commitment idx message authPath layer
-    · have hanswer :=
-        checkInternalQueryAnswer_eq_checkPathLabel_parent
-          (M := M) (S := S) (C := C) f idx message authPath layer
-      have htraceAnswer₀ :
-          traceEntryAnswer (M := M) (S := S) (C := C) (internalEntry layer) =
-            checkInternalQueryAnswer (M := M) (S := S) (C := C)
-              f idx message authPath layer := by
-        simpa [internalEntry] using
-          traceEntryAnswer_checkInternalQuery
-            (M := M) (S := S) (C := C) f idx message authPath layer
-      have htraceAnswer :
-          traceEntryAnswer (M := M) (S := S) (C := C) (internalEntry layer) =
-            checkPathLabel f idx message authPath parentLayer := by
-        rw [htraceAnswer₀, hanswer]
-      rw [htraceAnswer]
-      exact htarget
+      simpa [Fin.last] using htargetPath
+    rw [hleafEq] at htargetLast
+    exact htargetLast
+  refine ⟨leafEntry, ?_, hleafMissing, ?_⟩
+  · exact checkLeafQuery_mem_logEval_checkSingle
+      (M := M) (S := S) (C := C)
+      f x.commitment idx message authPath
+  · simpa [leafEntry, traceEntryAnswer] using htarget
+
+private theorem exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
+    {depth : ℕ} [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
+    (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
+    (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) x)
+    (hcheck :
+      eval f
+        (checkSingle (M := M) (S := S) (C := C)
+          x.commitment idx message authPath) = true)
+    (hescape :
+      ¬ LogContains
+        (logEval f
+          (checkSingle (M := M) (S := S) (C := C)
+            x.commitment idx message authPath)).2
+        x.commitTrace) :
+    ∃ entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t,
+      entry ∈
+        (logEval f
+          (checkSingle (M := M) (S := S) (C := C)
+            x.commitment idx message authPath)).2 ∧
+      entry ∉ x.commitTrace ∧
+      traceEntryAnswer (M := M) (S := S) (C := C) entry ∈
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) x.commitment x.commitTrace := by
+  classical
+  by_cases hmissingInternal :
+      ∃ layer : Fin depth,
+        (⟨checkInternalQuery (M := M) (S := S) (C := C)
+            f idx message authPath layer,
+          f (checkInternalQuery (M := M) (S := S) (C := C)
+            f idx message authPath layer)⟩ :
+          (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) ∉
+          x.commitTrace
+  · exact
+      exists_known_answer_not_mem_commitTrace_of_missing_internal
+        (M := M) (S := S) (C := C) (AUX := AUX)
+        f x idx message authPath hcoll hcheck hmissingInternal
   · have hallInternal :
-        ∀ layer : Fin depth, internalEntry layer ∈ x.commitTrace := by
+        ∀ layer : Fin depth,
+          (⟨checkInternalQuery (M := M) (S := S) (C := C)
+              f idx message authPath layer,
+            f (checkInternalQuery (M := M) (S := S) (C := C)
+              f idx message authPath layer)⟩ :
+            (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) ∈
+            x.commitTrace := by
       intro layer
       by_contra hnot
       exact hmissingInternal ⟨layer, hnot⟩
-    have hleafMissing : leafEntry ∉ x.commitTrace := by
-      intro hleaf
-      exact hescape
-        (logContains_checkSingle_of_leaf_and_internal_mem
-          (M := M) (S := S) (C := C)
-          f x.commitment idx message authPath x.commitTrace
-          (by simpa [leafEntry] using hleaf)
-          (fun layer => by simpa [internalEntry] using hallInternal layer))
-    have hknownGet :
-        (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
-          (depth := depth) x.commitment x.commitTrace depth
-          ⟨depth, Nat.lt_succ_self depth⟩).get
-            (pathPos idx ⟨depth, Nat.lt_succ_self depth⟩) =
-          some (checkPathLabel f idx message authPath
-            ⟨depth, Nat.lt_succ_self depth⟩) := by
-      exact
-        path_label_known_after_passes_of_internal_prefix
-          (M := M) (S := S) (C := C) (AUX := AUX)
-          f x idx message authPath hcoll hcheck depth (Nat.lt_succ_self depth)
-          (fun internalLayer _ => by
-            simpa [internalEntry] using hallInternal internalLayer)
-    have htarget :
-        f (checkLeafQuery (M := M) (S := S) (C := C) message authPath) ∈
-          traceKnownLabels (M := M) (S := S) (C := C)
-            (depth := depth) x.commitment x.commitTrace := by
-      have htargetPath :
-          checkPathLabel f idx message authPath ⟨depth, Nat.lt_succ_self depth⟩ ∈
-            traceKnownLabels (M := M) (S := S) (C := C)
-              (depth := depth) x.commitment x.commitTrace :=
-        knownLabels_after_passes_subset_traceKnownLabels
-          (M := M) (S := S) (C := C)
-          (depth := depth) x.commitment x.commitTrace depth (by omega)
-          ((mem_knownLabels_iff (C := C)
-            (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
-              (depth := depth) x.commitment x.commitTrace depth)
-            (checkPathLabel f idx message authPath
-              ⟨depth, Nat.lt_succ_self depth⟩)).mpr
-            ⟨⟨depth, Nat.lt_succ_self depth⟩,
-              pathPos idx ⟨depth, Nat.lt_succ_self depth⟩, hknownGet⟩)
-      have hleafEq :=
-        checkPathLabel_leaf_eq_leafQuery
-          (M := M) (S := S) (C := C) f idx message authPath
-      have htargetLast :
-          checkPathLabel f idx message authPath (Fin.last depth) ∈
-            traceKnownLabels (M := M) (S := S) (C := C)
-              (depth := depth) x.commitment x.commitTrace := by
-        simpa [Fin.last] using htargetPath
-      rw [hleafEq] at htargetLast
-      exact htargetLast
-    refine ⟨leafEntry, ?_, hleafMissing, ?_⟩
-    · exact checkLeafQuery_mem_logEval_checkSingle
-        (M := M) (S := S) (C := C)
-        f x.commitment idx message authPath
-    · simpa [leafEntry, traceEntryAnswer] using htarget
+    exact
+      exists_known_answer_not_mem_commitTrace_of_missing_leaf
+        (M := M) (S := S) (C := C) (AUX := AUX)
+        f x idx message authPath hcoll hcheck hallInternal hescape
 
 private theorem witnessTraceEscapeEvent_implies_freshTraceKnownLabelHit_of_rest_support
     {depth t : ℕ}
@@ -824,6 +912,74 @@ private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
         unfold extractabilityFreshHitTerm
         gcongr
 
+private noncomputable def witnessBadEventCommitPart {depth t : ℕ}
+    (A : ExtractAdversary M S C AUX depth t) :
+    OracleComp (Oracle M S C) ((C × AUX) × QueryLog (Oracle M S C)) :=
+  extractabilityWitnessCommitPart (M := M) (S := S) (C := C) A
+
+private noncomputable def witnessBadEventRestPart
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    {depth t : ℕ}
+    (A : ExtractAdversary M S C AUX depth t)
+    (x : ((C × AUX) × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C)) :
+    OracleComp (Oracle M S C)
+      (WitnessExtractTranscript M S C AUX depth × QueryCache (Oracle M S C)) :=
+  (simulateQ cachingOracle
+    (extractabilityWitnessRest (M := M) (S := S) (C := C)
+      A x.1.1.1 x.1.1.2 x.1.2)).run x.2
+
+private theorem witnessCommitCollision_bound {depth t : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : ExtractAdversary M S C AUX depth t)
+    (hC : 0 < Fintype.card C) :
+    Pr[fun x => ¬ (¬ CacheHasCollision x.2) |
+      (simulateQ cachingOracle
+        (witnessBadEventCommitPart (M := M) (S := S) (C := C) A)).run ∅] ≤
+      extractabilityBirthdayTerm C A.t₁ := by
+  classical
+  have hCdefault :
+      0 < Fintype.card ((Oracle M S C).Range default) := by
+    simpa [merkleOracleRange_card_eq (M := M) (S := S) (C := C) default] using hC
+  have hbirthday :=
+    probEvent_cacheCollision_le_birthday_total
+      (spec := Oracle M S C)
+      (oa := witnessBadEventCommitPart (M := M) (S := S) (C := C) A)
+      A.t₁
+      (by
+        simpa [witnessBadEventCommitPart] using
+          extractabilityWitnessCommitPart_totalBound
+            (M := M) (S := S) (C := C) A)
+      hCdefault
+      (merkleOracleRange_card_le (M := M) (S := S) (C := C))
+  simpa [extractabilityBirthdayTerm,
+    merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
+    not_not] using hbirthday
+
+private theorem witnessRestBadEvent_bound_of_commit_support {depth t : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : ExtractAdversary M S C AUX depth t)
+    {x : ((C × AUX) × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C)}
+    (hx : x ∈ support
+      ((simulateQ cachingOracle
+        (witnessBadEventCommitPart (M := M) (S := S) (C := C) A)).run ∅))
+    (hno : ¬ CacheHasCollision x.2) :
+    Pr[fun z => ¬ (¬ WitnessBadEventROM (M := M) (S := S) (C := C) z) |
+      witnessBadEventRestPart (M := M) (S := S) (C := C) A x] ≤
+      extractabilityFreshHitTerm C depth A.t₁ A.t₂ := by
+  rcases x with ⟨⟨⟨commitment, aux⟩, commitTrace⟩, cache₁⟩
+  have hbound :=
+    witnessBadEventROM_rest_bound
+      (M := M) (S := S) (C := C)
+      A (commitment := commitment) (aux := aux)
+      (commitTrace := commitTrace) (cache₁ := cache₁)
+      (by simpa [witnessBadEventCommitPart] using hx) hno
+  simpa [witnessBadEventRestPart, not_not] using hbound
+
 /-- ROM bad-event estimate for the selected-witness extractability game.
 
 Textbook statement: the selected-witness bad event is bounded by a commit
@@ -847,35 +1003,15 @@ private theorem witnessBadEventROM_game_bound {depth t : ℕ}
       extractabilityWitnessGame (M := M) (S := S) (C := C) A] ≤
       extractabilityErrorTerm C depth A.t₁ A.t₂ := by
   classical
-  let commitPart :=
-    extractabilityWitnessCommitPart (M := M) (S := S) (C := C) A
-  let restPart :=
-    fun x : ((C × AUX) × QueryLog (Oracle M S C)) × QueryCache (Oracle M S C) =>
-      (simulateQ cachingOracle
-        (extractabilityWitnessRest (M := M) (S := S) (C := C)
-          A x.1.1.1 x.1.1.2 x.1.2)).run x.2
+  let commitPart := witnessBadEventCommitPart (M := M) (S := S) (C := C) A
+  let restPart := witnessBadEventRestPart (M := M) (S := S) (C := C) A
   let ε₁ : ℝ≥0∞ := extractabilityBirthdayTerm C A.t₁
   let ε₂ : ℝ≥0∞ := extractabilityFreshHitTerm C depth A.t₁ A.t₂
-  have hCdefault :
-      0 < Fintype.card ((Oracle M S C).Range default) := by
-    simpa [merkleOracleRange_card_eq (M := M) (S := S) (C := C) default] using hC
   have hcommit :
       Pr[fun x => ¬ (¬ CacheHasCollision x.2) |
         (simulateQ cachingOracle commitPart).run ∅] ≤ ε₁ := by
-    have hbirthday :=
-      probEvent_cacheCollision_le_birthday_total
-        (spec := Oracle M S C)
-        (oa := commitPart)
-        A.t₁
-        (by
-          simpa [commitPart] using
-            extractabilityWitnessCommitPart_totalBound
-              (M := M) (S := S) (C := C) A)
-        hCdefault
-        (merkleOracleRange_card_le (M := M) (S := S) (C := C))
-    simpa [ε₁, extractabilityBirthdayTerm,
-      merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
-      not_not] using hbirthday
+    simpa [commitPart, ε₁] using
+      witnessCommitCollision_bound (M := M) (S := S) (C := C) A hC
   have hrest :
       ∀ x ∈ support ((simulateQ cachingOracle commitPart).run ∅),
         ¬ CacheHasCollision x.2 →
@@ -883,14 +1019,9 @@ private theorem witnessBadEventROM_game_bound {depth t : ℕ}
               (¬ WitnessBadEventROM (M := M) (S := S) (C := C) z) |
             restPart x] ≤ ε₂ := by
     intro x hx hno
-    rcases x with ⟨⟨⟨commitment, aux⟩, commitTrace⟩, cache₁⟩
-    have hbound :=
-      witnessBadEventROM_rest_bound
-        (M := M) (S := S) (C := C)
-        A (commitment := commitment) (aux := aux)
-        (commitTrace := commitTrace) (cache₁ := cache₁)
-        (by simpa [commitPart] using hx) hno
-    simpa [restPart, ε₂, not_not] using hbound
+    simpa [commitPart, restPart, ε₂] using
+      witnessRestBadEvent_bound_of_commit_support
+        (M := M) (S := S) (C := C) A (by simpa [commitPart] using hx) hno
   have hcombine :=
     probEvent_bind_le_add
       (mx := (simulateQ cachingOracle commitPart).run ∅)

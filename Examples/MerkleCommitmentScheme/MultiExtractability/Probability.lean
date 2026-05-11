@@ -85,6 +85,111 @@ private theorem witnessWinROM_congr_aux_openTrace_singleCheck
   simp [WitnessExtractabilityWinROM, WitnessExtractabilityWin,
     WitnessMismatch, extractedOutputOfTranscript]
 
+/-- The stateful family transcript for selected coordinate `k` is the same
+witness event as the projected single-commitment transcript, after forgetting
+the family wrapper and irrelevant auxiliary/open-trace payloads. -/
+private theorem statefulSelectedWin_iff_projectedWitnessWin
+    [DecidableEq S] [DecidableEq C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    {depth n : ℕ}
+    (k : Fin n) (commitments : Fin n → C) (aux : AUX)
+    (commitTrace openTrace : QueryLog (Oracle M S C))
+    (opening : OpeningData M S C depth)
+    (i : {j // j ∈ opening.I})
+    (single : Bool × QueryLog (Oracle M S C))
+    (cache : QueryCache (Oracle M S C)) :
+    StatefulSelectedWin (M := M) (S := S) (C := C)
+      (AUX := AUX) k
+      (({ commitments := commitments
+          aux := aux
+          commitTrace := commitTrace
+          opening := ⟨k, opening⟩
+          openTrace := openTrace
+          witness? := some i
+          singleCheck? := some single },
+        cache) :
+        MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n ×
+          QueryCache (Oracle M S C)) ↔
+    WitnessExtractabilityWinROM (M := M) (S := S) (C := C)
+      (({ base :=
+            { commitment := commitments k
+              aux := (commitments, aux)
+              commitTrace := commitTrace
+              opening := opening
+              openTrace := openTrace ++ [] }
+          witness? := some i
+          singleCheck? := some single },
+        cache) :
+        WitnessExtractTranscript M S C ((Fin n → C) × AUX) depth ×
+          QueryCache (Oracle M S C)) := by
+  simpa [StatefulSelectedWin,
+    MultiExtractabilityStatefulWitnessWinROM,
+    MultiExtractabilityStatefulWitnessTranscript.toWitnessTranscript] using
+    (witnessWinROM_congr_aux_openTrace_singleCheck
+      (M := M) (S := S) (C := C)
+      (commitment := commitments k)
+      (aux₁ := aux) (aux₂ := (commitments, aux))
+      (commitTrace := commitTrace)
+      (openTrace₁ := openTrace) (openTrace₂ := openTrace ++ [])
+      (opening := opening) (witness? := some i)
+      (single₁? := some single) (single₂? := some single)
+      (cache := cache))
+
+/-- Lifting `statefulSelectedWin_iff_projectedWitnessWin` through the logged
+selected `checkSingle` run. This is the only probabilistic ingredient needed
+in the selected-coordinate branch of the stateful/projection comparison. -/
+private theorem statefulSelectedBranch_some_congr
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    {depth n : ℕ}
+    (k : Fin n) (commitments : Fin n → C) (aux : AUX)
+    (commitTrace openTrace : QueryLog (Oracle M S C))
+    (opening : OpeningData M S C depth)
+    (i : {j // j ∈ opening.I})
+    (cache₂ : QueryCache (Oracle M S C)) :
+    Pr[fun z => StatefulSelectedWin (M := M) (S := S) (C := C)
+        (AUX := AUX) k z |
+      (simulateQ cachingOracle
+        ((simulateQ loggingOracle
+          (checkSingle (M := M) (S := S) (C := C)
+            (commitments k) i.1 (opening.message i) (opening.proof i))).run)).run
+          cache₂ >>= fun single =>
+        pure
+          (({ commitments := commitments
+              aux := aux
+              commitTrace := commitTrace
+              opening := ⟨k, opening⟩
+              openTrace := openTrace
+              witness? := some i
+              singleCheck? := some single.1 },
+            single.2) :
+            MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n ×
+              QueryCache (Oracle M S C))] =
+    Pr[fun z => WitnessExtractabilityWinROM (M := M) (S := S) (C := C) z |
+      (simulateQ cachingOracle
+        ((simulateQ loggingOracle
+          (checkSingle (M := M) (S := S) (C := C)
+            (commitments k) i.1 (opening.message i) (opening.proof i))).run)).run
+          cache₂ >>= fun single =>
+        pure
+          (({ base :=
+                { commitment := commitments k
+                  aux := (commitments, aux)
+                  commitTrace := commitTrace
+                  opening := opening
+                  openTrace := openTrace ++ [] }
+              witness? := some i
+              singleCheck? := some single.1 },
+            single.2) :
+            WitnessExtractTranscript M S C ((Fin n → C) × AUX) depth ×
+              QueryCache (Oracle M S C))] := by
+  apply OracleComp.probEvent_bind_pure_congr_hetero
+  intro z
+  exact statefulSelectedWin_iff_projectedWitnessWin
+    (M := M) (S := S) (C := C) (AUX := AUX)
+    k commitments aux commitTrace openTrace opening i z.1 z.2
+
 private noncomputable def multiExtractabilityWitnessCommitPart {depth n t : ℕ}
     (A : MultiExtractAdversary M S C AUX depth n t) :
     OracleComp (Oracle M S C) (((Fin n → C) × AUX) × QueryLog (Oracle M S C)) :=
@@ -229,9 +334,10 @@ private theorem stateful_win_implies_exists_selected {depth n : ℕ}
   intro hwin
   exact ⟨z.1.opening.1, rfl, hwin⟩
 
-/-- The selected branch for coordinate `k` is bounded by the ordinary witness
-game for the projected single-commitment adversary. -/
-private theorem stateful_selected_branch_le_projected_witnessGame {depth n t : ℕ}
+/-- Core branch comparison after expanding the stateful and projected witness
+games. The public local helper below keeps later probability proofs from
+depending on this operational normalization script directly. -/
+private theorem stateful_selected_branch_le_projected_witnessGame_core {depth n t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -364,110 +470,9 @@ private theorem stateful_selected_branch_le_projected_witnessGame {depth n t : �
         simp [hw₁, simulateQ_bind, StateT.run_bind,
           map_eq_bind_pure_comp]
         have hprob :=
-          OracleComp.probEvent_bind_congr_hetero
-            (mx :=
-              (simulateQ cachingOracle
-                (simulateQ loggingOracle
-                  (checkSingle (M := M) (S := S) (C := C)
-                    (p.1.1.1 k) i.1 (opening.message i) (opening.proof i))).run).run
-                cache₂)
-            (my := fun single => pure
-              (({ commitments := p.1.1.1
-                  aux := p.1.1.2
-                  commitTrace := p.1.2
-                  opening := ⟨k, opening⟩
-                  openTrace := openTrace
-                  witness? := some i
-                  singleCheck? := some single.1 },
-                single.2) :
-                MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n ×
-                  QueryCache (Oracle M S C)))
-            (mz := fun single => pure
-              (({ base :=
-                    { commitment := p.1.1.1 k
-                      aux := p.1.1
-                      commitTrace := p.1.2
-                      opening := opening
-                      openTrace := openTrace ++ [] }
-                  witness? := some i
-                  singleCheck? := some single.1 },
-                single.2) :
-                WitnessExtractTranscript M S C ((Fin n → C) × AUX) depth ×
-                  QueryCache (Oracle M S C)))
-            (p := fun z =>
-              StatefulSelectedWin (M := M) (S := S) (C := C)
-                (AUX := AUX) k z)
-            (q := fun z =>
-              WitnessExtractabilityWinROM (M := M) (S := S) (C := C) z)
-            (by
-              intro z
-              rcases z with ⟨single, cache⟩
-              rw [probEvent_pure, probEvent_pure]
-              have hiff :
-                  StatefulSelectedWin (M := M) (S := S) (C := C)
-                    (AUX := AUX) k
-                    (({ commitments := p.1.1.1
-                        aux := p.1.1.2
-                        commitTrace := p.1.2
-                        opening := ⟨k, opening⟩
-                        openTrace := openTrace
-                        witness? := some i
-                        singleCheck? := some single },
-                      cache) :
-                      MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n ×
-                        QueryCache (Oracle M S C)) ↔
-                  WitnessExtractabilityWinROM (M := M) (S := S) (C := C)
-                    (({ base :=
-                          { commitment := p.1.1.1 k
-                            aux := p.1.1
-                            commitTrace := p.1.2
-                            opening := opening
-                            openTrace := openTrace ++ [] }
-                        witness? := some i
-                        singleCheck? := some single },
-                      cache) :
-                      WitnessExtractTranscript M S C ((Fin n → C) × AUX) depth ×
-                        QueryCache (Oracle M S C)) := by
-                simpa [StatefulSelectedWin,
-                  MultiExtractabilityStatefulWitnessWinROM,
-                  MultiExtractabilityStatefulWitnessTranscript.toWitnessTranscript] using
-                  (witnessWinROM_congr_aux_openTrace_singleCheck
-                    (M := M) (S := S) (C := C)
-                    (commitment := p.1.1.1 k)
-                    (aux₁ := p.1.1.2) (aux₂ := p.1.1)
-                    (commitTrace := p.1.2)
-                    (openTrace₁ := openTrace) (openTrace₂ := openTrace ++ [])
-                    (opening := opening) (witness? := some i)
-                    (single₁? := some single) (single₂? := some single)
-                    (cache := cache))
-              by_cases hleft :
-                  StatefulSelectedWin (M := M) (S := S) (C := C)
-                    (AUX := AUX) k
-                    (({ commitments := p.1.1.1
-                        aux := p.1.1.2
-                        commitTrace := p.1.2
-                        opening := ⟨k, opening⟩
-                        openTrace := openTrace
-                        witness? := some i
-                        singleCheck? := some single },
-                      cache) :
-                      MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n ×
-                        QueryCache (Oracle M S C))
-              · have hright := hiff.mp hleft
-                simp [hleft, hright]
-              · have hright : ¬ WitnessExtractabilityWinROM (M := M) (S := S) (C := C)
-                    (({ base :=
-                          { commitment := p.1.1.1 k
-                            aux := p.1.1
-                            commitTrace := p.1.2
-                            opening := opening
-                            openTrace := openTrace ++ [] }
-                        witness? := some i
-                        singleCheck? := some single },
-                      cache) :
-                      WitnessExtractTranscript M S C ((Fin n → C) × AUX) depth ×
-                        QueryCache (Oracle M S C)) := fun h => hleft (hiff.mpr h)
-                simp [hleft, hright])
+          statefulSelectedBranch_some_congr
+            (M := M) (S := S) (C := C) (AUX := AUX)
+            k p.1.1.1 p.1.1.2 p.1.2 openTrace opening i cache₂
         exact le_of_eq (by
           simpa [StatefulSelectedWin, base₁, hw₁, map_eq_bind_pure_comp] using hprob)
   · trans 0
@@ -495,6 +500,28 @@ private theorem stateful_selected_branch_le_projected_witnessGame {depth n t : �
           · rw [hsingle] at hfst
             exact hsel hfst
     · exact zero_le _
+
+/-- The selected branch of the stateful family game is bounded by the ordinary
+single-commitment witness game for the projected adversary.
+
+The operational normalization is isolated in
+`stateful_selected_branch_le_projected_witnessGame_core`; keeping this wrapper
+small makes the final union-bound proof read as the textbook reduction:
+select a coordinate, project to the single-commitment witness game, then apply
+the single extractability bound. -/
+private theorem stateful_selected_branch_le_projected_witnessGame {depth n t : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : MultiExtractAdversary M S C AUX depth n t) (k : Fin n) :
+    Pr[fun z => StatefulSelectedWin (M := M) (S := S) (C := C)
+        (AUX := AUX) k z |
+      multiExtractabilityStatefulWitnessGame (M := M) (S := S) (C := C) A] ≤
+    Pr[fun z => WitnessExtractabilityWinROM (M := M) (S := S) (C := C) z |
+      extractabilityWitnessGame (M := M) (S := S) (C := C)
+        (projectMultiExtractAdversary (M := M) (S := S) (C := C) A k)] :=
+  stateful_selected_branch_le_projected_witnessGame_core
+    (M := M) (S := S) (C := C) (AUX := AUX) A k
 
 /-- Each selected branch of the stateful game is bounded by the corresponding
 single-commitment witness extractability error. -/
