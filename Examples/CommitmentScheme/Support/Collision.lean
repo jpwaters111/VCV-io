@@ -58,6 +58,192 @@ def CacheHasCollision (cache : QueryCache spec) : Prop :=
   ∃ (t₁ t₂ : spec.Domain) (u₁ : spec.Range t₁) (u₂ : spec.Range t₂),
     t₁ ≠ t₂ ∧ cache t₁ = some u₁ ∧ cache t₂ = some u₂ ∧ HEq u₁ u₂
 
+/-- Two query logs have a cross-collision: one entry from each log has distinct
+inputs but HEq-equal outputs. -/
+def LogCrossCollision (log₀ log₁ : QueryLog spec) : Prop :=
+  ∃ entry₀ ∈ log₀, ∃ entry₁ ∈ log₁, entry₀.1 ≠ entry₁.1 ∧ HEq entry₀.2 entry₁.2
+
+/-- A log entry is fresh relative to an initial cache when its query was not
+already cached in that initial cache. -/
+def LogEntryFresh (cache : QueryCache spec)
+    (entry : (t : spec.Domain) × spec.Range t) : Prop :=
+  cache entry.1 = none
+
+/-- A later cache contains a fresh entry whose output matches an entry already
+present in the initial cache. This is the explicit cache-hit event that must be
+excluded to recover the textbook verifier-rest binding term. -/
+def FreshHitInitialCache (cache₀ cache₁ : QueryCache spec) : Prop :=
+  ∃ (tNew tOld : spec.Domain) (uNew : spec.Range tNew) (uOld : spec.Range tOld),
+    cache₀ tNew = none ∧ cache₁ tNew = some uNew ∧
+      cache₀ tOld = some uOld ∧ tNew ≠ tOld ∧ HEq uNew uOld
+
+/-- A cross-log collision where both colliding log entries are fresh relative to
+the same initial cache. -/
+def RestCreatedLogCrossCollision (cache : QueryCache spec)
+    (log₀ log₁ : QueryLog spec) : Prop :=
+  ∃ entry₀ ∈ log₀, ∃ entry₁ ∈ log₁,
+    LogEntryFresh cache entry₀ ∧ LogEntryFresh cache entry₁ ∧
+      entry₀.1 ≠ entry₁.1 ∧ HEq entry₀.2 entry₁.2
+
+namespace LogCrossCollision
+
+/-- Cross-collisions are monotone under log containment on both sides. -/
+theorem mono {log₀ log₀' log₁ log₁' : QueryLog spec}
+    (h₀ : ∀ entry, entry ∈ log₀ → entry ∈ log₀')
+    (h₁ : ∀ entry, entry ∈ log₁ → entry ∈ log₁') :
+    LogCrossCollision log₀ log₁ → LogCrossCollision log₀' log₁' := by
+  rintro ⟨entry₀, hentry₀, entry₁, hentry₁, hne, heq⟩
+  exact ⟨entry₀, h₀ _ hentry₀, entry₁, h₁ _ hentry₁, hne, heq⟩
+
+/-- If every entry from both logs is present in the same cache, any cross-log
+collision gives a cache collision. -/
+theorem to_cacheCollision {cache : QueryCache spec} {log₀ log₁ : QueryLog spec}
+    (h₀ : ∀ entry ∈ log₀, cache entry.1 = some entry.2)
+    (h₁ : ∀ entry ∈ log₁, cache entry.1 = some entry.2)
+    (hcross : LogCrossCollision log₀ log₁) :
+    CacheHasCollision cache := by
+  rcases hcross with ⟨entry₀, hentry₀, entry₁, hentry₁, hne, heq⟩
+  exact ⟨entry₀.1, entry₁.1, entry₀.2, entry₁.2, hne,
+    h₀ entry₀ hentry₀, h₁ entry₁ hentry₁, heq⟩
+
+/-- A cross-collision between logs bounded by `n₀` and `n₁` is witnessed by
+some pair of bounded positions. -/
+theorem exists_fin_pair_of_length_le {log₀ log₁ : QueryLog spec} {n₀ n₁ : ℕ}
+    (hlen₀ : log₀.length ≤ n₀) (hlen₁ : log₁.length ≤ n₁)
+    (hcross : LogCrossCollision log₀ log₁) :
+    ∃ (i : Fin n₀) (j : Fin n₁),
+      log₀.length > i.val ∧ log₁.length > j.val ∧
+        log₀[i]?.bind (fun entry₀ =>
+          log₁[j]?.map (fun entry₁ => entry₀.1 ≠ entry₁.1 ∧ HEq entry₀.2 entry₁.2)) =
+          some true := by
+  rcases hcross with ⟨entry₀, hentry₀, entry₁, hentry₁, hne, heq⟩
+  obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hentry₀
+  obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hentry₁
+  have hi' : i < n₀ := Nat.lt_of_lt_of_le hi hlen₀
+  have hj' : j < n₁ := Nat.lt_of_lt_of_le hj hlen₁
+  refine ⟨⟨i, hi'⟩, ⟨j, hj'⟩, hi, hj, ?_⟩
+  have hget₀ : log₀[(⟨i, hi'⟩ : Fin n₀)]? = some log₀[i] := by
+    simp [List.getElem?_eq_getElem, hi]
+  have hget₁ : log₁[(⟨j, hj'⟩ : Fin n₁)]? = some log₁[j] := by
+    simp [List.getElem?_eq_getElem, hj]
+  rw [hget₀, hget₁]
+  simp [hne, heq]
+
+end LogCrossCollision
+
+namespace RestCreatedLogCrossCollision
+
+/-- Forgetting freshness gives an ordinary cross-log collision. -/
+theorem to_logCrossCollision {cache : QueryCache spec} {log₀ log₁ : QueryLog spec}
+    (hcross : RestCreatedLogCrossCollision cache log₀ log₁) :
+    LogCrossCollision log₀ log₁ := by
+  rcases hcross with
+    ⟨entry₀, hentry₀, entry₁, hentry₁, _hfresh₀, _hfresh₁, hne, heq⟩
+  exact ⟨entry₀, hentry₀, entry₁, hentry₁, hne, heq⟩
+
+/-- Rest-created cross-collisions are monotone under log containment. -/
+theorem mono {cache : QueryCache spec} {log₀ log₀' log₁ log₁' : QueryLog spec}
+    (h₀ : ∀ entry, entry ∈ log₀ → entry ∈ log₀')
+    (h₁ : ∀ entry, entry ∈ log₁ → entry ∈ log₁') :
+    RestCreatedLogCrossCollision cache log₀ log₁ →
+      RestCreatedLogCrossCollision cache log₀' log₁' := by
+  rintro ⟨entry₀, hentry₀, entry₁, hentry₁, hfresh₀, hfresh₁, hne, heq⟩
+  exact ⟨entry₀, h₀ _ hentry₀, entry₁, h₁ _ hentry₁, hfresh₀, hfresh₁, hne, heq⟩
+
+/-- A rest-created cross-collision between bounded logs is witnessed by bounded
+positions. -/
+theorem exists_fin_pair_of_length_le {cache : QueryCache spec}
+    {log₀ log₁ : QueryLog spec} {n₀ n₁ : ℕ}
+    (hlen₀ : log₀.length ≤ n₀) (hlen₁ : log₁.length ≤ n₁)
+    (hcross : RestCreatedLogCrossCollision cache log₀ log₁) :
+    ∃ (i : Fin n₀) (j : Fin n₁),
+      log₀.length > i.val ∧ log₁.length > j.val ∧
+        log₀[i]?.bind (fun entry₀ =>
+          log₁[j]?.map (fun entry₁ =>
+            LogEntryFresh cache entry₀ ∧ LogEntryFresh cache entry₁ ∧
+              entry₀.1 ≠ entry₁.1 ∧ HEq entry₀.2 entry₁.2)) =
+          some true := by
+  rcases hcross with
+    ⟨entry₀, hentry₀, entry₁, hentry₁, hfresh₀, hfresh₁, hne, heq⟩
+  obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hentry₀
+  obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hentry₁
+  have hi' : i < n₀ := Nat.lt_of_lt_of_le hi hlen₀
+  have hj' : j < n₁ := Nat.lt_of_lt_of_le hj hlen₁
+  refine ⟨⟨i, hi'⟩, ⟨j, hj'⟩, hi, hj, ?_⟩
+  have hget₀ : log₀[(⟨i, hi'⟩ : Fin n₀)]? = some log₀[i] := by
+    simp [List.getElem?_eq_getElem, hi]
+  have hget₁ : log₁[(⟨j, hj'⟩ : Fin n₁)]? = some log₁[j] := by
+    simp [List.getElem?_eq_getElem, hj]
+  rw [hget₀, hget₁]
+  simp [hfresh₀, hfresh₁, hne, heq]
+
+end RestCreatedLogCrossCollision
+
+namespace LogCrossCollision
+
+/-- If a cross-collision is present in two logs whose entries are all present in
+the same final cache, then it is rest-created relative to an initial cache when
+the initial cache has no collision and the final cache has no fresh hit into the
+initial cache. -/
+theorem to_restCreated_of_no_initial_collision_no_freshHit
+    {cache₀ cache₁ : QueryCache spec} {log₀ log₁ : QueryLog spec}
+    (hcache : cache₀ ≤ cache₁)
+    (hlog₀ : ∀ entry ∈ log₀, cache₁ entry.1 = some entry.2)
+    (hlog₁ : ∀ entry ∈ log₁, cache₁ entry.1 = some entry.2)
+    (hnoCollision : ¬ CacheHasCollision cache₀)
+    (hnoFreshHit : ¬ FreshHitInitialCache cache₀ cache₁)
+    (hcross : LogCrossCollision log₀ log₁) :
+    RestCreatedLogCrossCollision cache₀ log₀ log₁ := by
+  rcases hcross with ⟨entry₀, hentry₀, entry₁, hentry₁, hne, heq⟩
+  have hentry₀_cache₁ : cache₁ entry₀.1 = some entry₀.2 :=
+    hlog₀ entry₀ hentry₀
+  have hentry₁_cache₁ : cache₁ entry₁.1 = some entry₁.2 :=
+    hlog₁ entry₁ hentry₁
+  have hfresh₀ : LogEntryFresh cache₀ entry₀ := by
+    unfold LogEntryFresh
+    cases hcache₀_entry₀ : cache₀ entry₀.1 with
+    | none => rfl
+    | some old₀ =>
+        have hold₀_cache₁ : cache₁ entry₀.1 = some old₀ :=
+          hcache hcache₀_entry₀
+        have hold₀_eq : HEq old₀ entry₀.2 := by
+          have hsome : (some old₀ : Option (spec.Range entry₀.1)) = some entry₀.2 := by
+            rw [← hold₀_cache₁, hentry₀_cache₁]
+          exact heq_of_eq (Option.some.inj hsome)
+        cases hcache₀_entry₁ : cache₀ entry₁.1 with
+        | none =>
+            exact False.elim <| hnoFreshHit
+              ⟨entry₁.1, entry₀.1, entry₁.2, old₀, hcache₀_entry₁,
+                hentry₁_cache₁, hcache₀_entry₀, hne.symm,
+                heq.symm.trans hold₀_eq.symm⟩
+        | some old₁ =>
+            have hold₁_cache₁ : cache₁ entry₁.1 = some old₁ :=
+              hcache hcache₀_entry₁
+            have hold₁_eq : HEq old₁ entry₁.2 := by
+              have hsome : (some old₁ : Option (spec.Range entry₁.1)) = some entry₁.2 := by
+                rw [← hold₁_cache₁, hentry₁_cache₁]
+              exact heq_of_eq (Option.some.inj hsome)
+            exact False.elim <| hnoCollision
+              ⟨entry₀.1, entry₁.1, old₀, old₁, hne, hcache₀_entry₀,
+                hcache₀_entry₁, hold₀_eq.trans (heq.trans hold₁_eq.symm)⟩
+  have hfresh₁ : LogEntryFresh cache₀ entry₁ := by
+    unfold LogEntryFresh
+    cases hcache₀_entry₁ : cache₀ entry₁.1 with
+    | none => rfl
+    | some old₁ =>
+        have hold₁_cache₁ : cache₁ entry₁.1 = some old₁ :=
+          hcache hcache₀_entry₁
+        have hold₁_eq : HEq old₁ entry₁.2 := by
+          have hsome : (some old₁ : Option (spec.Range entry₁.1)) = some entry₁.2 := by
+            rw [← hold₁_cache₁, hentry₁_cache₁]
+          exact heq_of_eq (Option.some.inj hsome)
+        exact False.elim <| hnoFreshHit
+          ⟨entry₀.1, entry₁.1, entry₀.2, old₁, hfresh₀,
+            hentry₀_cache₁, hcache₀_entry₁, hne, heq.trans hold₁_eq.symm⟩
+  exact ⟨entry₀, hentry₀, entry₁, hentry₁, hfresh₀, hfresh₁, hne, heq⟩
+
+end LogCrossCollision
+
 /-- In a collision-free cache, a value determines at most one query input. -/
 lemma cache_lookup_eq_of_noCollision
     {cache : QueryCache spec}
@@ -357,6 +543,130 @@ theorem log_entry_in_cache_and_mono {α : Type}
       | head => exact ih_mono hcache_mid_entry
       | tail _ hentry' => exact ih_entries entry hentry',
       le_trans hcache₀_le_mid ih_mono⟩
+
+/-- A total query bound controls the log length even when the logged computation
+is run through `cachingOracle`. -/
+theorem log_length_le_of_mem_support_run_cached_logging {α : Type}
+    {oa : OracleComp spec α} {n : ℕ}
+    (hbound : IsTotalQueryBound oa n)
+    (cache₀ : QueryCache spec)
+    {z : (α × QueryLog spec) × QueryCache spec}
+    (hz : z ∈ support
+      ((simulateQ cachingOracle ((simulateQ loggingOracle oa).run)).run cache₀)) :
+    z.1.2.length ≤ n := by
+  induction oa using OracleComp.inductionOn generalizing n cache₀ z with
+  | pure x =>
+      simp only [simulateQ_pure] at hz
+      change z ∈ support (pure ((x, ([] : QueryLog spec)), cache₀)) at hz
+      rw [support_pure, Set.mem_singleton_iff] at hz
+      subst hz
+      simp
+  | query_bind t mx ih =>
+      rw [isTotalQueryBound_query_bind_iff] at hbound
+      obtain ⟨hpos, hrest⟩ := hbound
+      rw [run_simulateQ_loggingOracle_query_bind] at hz
+      rw [show simulateQ cachingOracle
+            ((query t : OracleComp spec _) >>= fun u =>
+              (fun p : α × QueryLog spec =>
+                (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2)) <$>
+                (simulateQ loggingOracle (mx u)).run) =
+            ((cachingOracle t >>= fun u =>
+              simulateQ cachingOracle
+                ((fun p : α × QueryLog spec =>
+                  (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2)) <$>
+                  (simulateQ loggingOracle (mx u)).run)) :
+              StateT (QueryCache spec) (OracleComp spec) _)
+          from by simp [simulateQ_bind, simulateQ_query, OracleQuery.input_query,
+            OracleQuery.cont_query]] at hz
+      have hbind_rw : (cachingOracle t >>= fun u =>
+              simulateQ cachingOracle
+                ((fun p : α × QueryLog spec =>
+                  (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2)) <$>
+                  (simulateQ loggingOracle (mx u)).run) :
+              StateT (QueryCache spec) (OracleComp spec) _) =
+            (cachingOracle t >>= fun u =>
+              StateT.map
+                (fun p : α × QueryLog spec =>
+                  (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+                (simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run))) := by
+        congr 1
+        ext u s
+        simp only [StateT.map, StateT.run, map_eq_bind_pure_comp,
+          simulateQ_bind, simulateQ_pure, Function.comp_def]
+        rfl
+      rw [hbind_rw, StateT.run_bind] at hz
+      rw [support_bind] at hz
+      simp only [Set.mem_iUnion] at hz
+      obtain ⟨⟨u, cache_mid⟩, _, hz⟩ := hz
+      change z ∈ support ((StateT.map
+        (fun p : α × QueryLog spec =>
+          (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+        (simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run))).run cache_mid) at hz
+      rw [show (StateT.map
+        (fun p : α × QueryLog spec =>
+          (p.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: p.2))
+        (simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run))).run cache_mid =
+        (fun zz : (α × QueryLog spec) × QueryCache spec =>
+          ((zz.1.1, (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: zz.1.2), zz.2)) <$>
+        ((simulateQ cachingOracle ((simulateQ loggingOracle (mx u)).run)).run cache_mid)
+        from by simp only [StateT.map, StateT.run, map_eq_bind_pure_comp,
+          Function.comp_def]] at hz
+      rw [support_map] at hz
+      obtain ⟨⟨⟨x', log'⟩, cache_final⟩, hz_cont, heq⟩ := hz
+      have hz_eq :
+          z = ((x', (⟨t, u⟩ : (i : spec.Domain) × spec.Range i) :: log'), cache_final) :=
+        heq.symm
+      rw [hz_eq]
+      have hlen : log'.length ≤ n - 1 :=
+        ih u (hrest u) cache_mid hz_cont
+      simpa using Nat.succ_le_of_lt (Nat.lt_of_le_of_lt hlen (Nat.sub_lt hpos (by simp)))
+
+/-- For two cached logged computations run sequentially, a cross-collision
+between their two logs is always present as a collision in the final cache. -/
+theorem logCrossCollision_implies_cacheCollision_cached_two {α β : Type}
+    (oa₀ : OracleComp spec α) (oa₁ : OracleComp spec β)
+    (cache₀ : QueryCache spec)
+    {z : ((α × QueryLog spec) × (β × QueryLog spec)) × QueryCache spec}
+    (hz : z ∈ support ((simulateQ cachingOracle
+        ((simulateQ loggingOracle oa₀).run >>= fun out₀ =>
+          (simulateQ loggingOracle oa₁).run >>= fun out₁ =>
+            pure (out₀, out₁))).run cache₀))
+    (hcross : LogCrossCollision z.1.1.2 z.1.2.2) :
+    CacheHasCollision z.2 := by
+  rw [simulateQ_bind, StateT.run_bind] at hz
+  rw [support_bind] at hz
+  simp only [Set.mem_iUnion] at hz
+  obtain ⟨z₀, hz₀, hzrest⟩ := hz
+  rw [simulateQ_bind, StateT.run_bind] at hzrest
+  rw [support_bind] at hzrest
+  simp only [Set.mem_iUnion] at hzrest
+  obtain ⟨z₁, hz₁, hzpure⟩ := hzrest
+  simp [simulateQ_pure, StateT.run] at hzpure
+  subst z
+  have h₀ := log_entry_in_cache_and_mono oa₀ cache₀ z₀ hz₀
+  have h₁ := log_entry_in_cache_and_mono oa₁ z₀.2 z₁ hz₁
+  exact LogCrossCollision.to_cacheCollision
+    (fun entry hentry => h₁.2 (h₀.1 entry hentry))
+    (fun entry hentry => h₁.1 entry hentry)
+    hcross
+
+/-- Cross-log collision probability for two cached logged computations is bounded
+by the probability of a final cache collision. -/
+theorem probEvent_logCrossCollision_cached_two_le_cacheCollision {α β : Type}
+    (oa₀ : OracleComp spec α) (oa₁ : OracleComp spec β)
+    (cache₀ : QueryCache spec) :
+    Pr[fun z => LogCrossCollision z.1.1.2 z.1.2.2 |
+      (simulateQ cachingOracle
+        ((simulateQ loggingOracle oa₀).run >>= fun out₀ =>
+          (simulateQ loggingOracle oa₁).run >>= fun out₁ =>
+            pure (out₀, out₁))).run cache₀] ≤
+    Pr[fun z => CacheHasCollision z.2 |
+      (simulateQ cachingOracle
+        ((simulateQ loggingOracle oa₀).run >>= fun out₀ =>
+          (simulateQ loggingOracle oa₁).run >>= fun out₁ =>
+            pure (out₀, out₁))).run cache₀] :=
+  probEvent_mono fun _ hz hcross =>
+    logCrossCollision_implies_cacheCollision_cached_two oa₀ oa₁ cache₀ hz hcross
 
 /-- **Converse of `log_entry_in_cache_and_mono`**: when running `loggingOracle` inside
 `cachingOracle`, every cache entry that was not in the initial cache has a corresponding
@@ -1366,6 +1676,46 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
     _ ≤ (n ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
         gcongr; exact_mod_cast (show n * (n - 1) ≤ n ^ 2 by nlinarith [Nat.sub_le n 1])
 
+/-- Conservative generic bound for cross-collision between two cached logged
+computations from an empty cache, via the final-cache birthday bound for the
+combined computation. -/
+theorem probEvent_logCrossCollision_cached_two_le_birthday_total {α β : Type}
+    [Inhabited ι]
+    (oa₀ : OracleComp spec α) (oa₁ : OracleComp spec β)
+    (n₀ n₁ : ℕ)
+    (hbound₀ : IsTotalQueryBound oa₀ n₀)
+    (hbound₁ : IsTotalQueryBound oa₁ n₁)
+    (hC : 0 < Fintype.card (spec.Range default))
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t)) :
+    Pr[fun z => LogCrossCollision z.1.1.2 z.1.2.2 |
+      (simulateQ cachingOracle
+        ((simulateQ loggingOracle oa₀).run >>= fun out₀ =>
+          (simulateQ loggingOracle oa₁).run >>= fun out₁ =>
+            pure (out₀, out₁))).run ∅] ≤
+      ((n₀ + n₁) ^ 2 : ℝ≥0∞) / (2 * Fintype.card (spec.Range default)) := by
+  let oa : OracleComp spec ((α × QueryLog spec) × (β × QueryLog spec)) :=
+    (simulateQ loggingOracle oa₀).run >>= fun out₀ =>
+      (simulateQ loggingOracle oa₁).run >>= fun out₁ =>
+        pure (out₀, out₁)
+  have hbound₀' : IsTotalQueryBound ((simulateQ loggingOracle oa₀).run) n₀ :=
+    (isTotalQueryBound_run_simulateQ_loggingOracle_iff oa₀ n₀).mpr hbound₀
+  have hbound₁' : IsTotalQueryBound ((simulateQ loggingOracle oa₁).run) n₁ :=
+    (isTotalQueryBound_run_simulateQ_loggingOracle_iff oa₁ n₁).mpr hbound₁
+  have htail :
+      ∀ out₀ : α × QueryLog spec,
+        IsTotalQueryBound
+          ((simulateQ loggingOracle oa₁).run >>= fun out₁ => pure (out₀, out₁)) n₁ := by
+    intro out₀
+    have h := isTotalQueryBound_bind hbound₁'
+      (fun out₁ => (show IsTotalQueryBound (pure (out₀, out₁)) 0 from trivial))
+    simpa using h
+  have hbound : IsTotalQueryBound oa (n₀ + n₁) := by
+    simpa [oa] using isTotalQueryBound_bind hbound₀' htail
+  have hle := le_trans
+    (probEvent_logCrossCollision_cached_two_le_cacheCollision oa₀ oa₁ ∅)
+    (probEvent_cacheCollision_le_birthday_total oa (n₀ + n₁) hbound hC hrange)
+  simpa [oa, Nat.cast_add] using hle
+
 /-! ## Per-Index Bound Versions -/
 
 /-- Birthday bound for `cachingOracle` with per-index query bound. -/
@@ -1660,6 +2010,44 @@ theorem probEvent_cache_has_value_le_of_noCollision {α : Type}
   intro t₀ t₁ v₁ v₂ hcache₀ hcache₁ hheq₀ hheq₁
   by_contra hne
   exact hno ⟨t₀, t₁, v₁, v₂, hne, hcache₀, hcache₁, hheq₀.trans hheq₁.symm⟩
+
+/-- A union-bound version of `probEvent_cache_has_value_le_of_noCollision` for a finite
+set of target outputs. -/
+theorem probEvent_cache_has_value_mem_finset_le_of_noCollision {α : Type}
+    [Inhabited ι]
+    (oa : OracleComp spec α)
+    (n : ℕ) (hbound : IsTotalQueryBound oa n)
+    (hrange : ∀ t, Fintype.card (spec.Range default) ≤ Fintype.card (spec.Range t))
+    (targets : Finset (spec.Range default))
+    (cache₀ : QueryCache spec)
+    (hno : ¬ CacheHasCollision cache₀) :
+    Pr[fun z => ∃ v₀ ∈ targets, ∃ t₀ : spec.Domain, ∃ v : spec.Range t₀,
+        z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
+      (simulateQ cachingOracle oa).run cache₀] ≤
+      (targets.card : ℝ≥0∞) *
+        ((n : ℝ≥0∞) * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹) := by
+  classical
+  calc
+    Pr[fun z => ∃ v₀ ∈ targets, ∃ t₀ : spec.Domain, ∃ v : spec.Range t₀,
+        z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
+      (simulateQ cachingOracle oa).run cache₀]
+        ≤ ∑ v₀ ∈ targets,
+            Pr[fun z => ∃ t₀ : spec.Domain, ∃ v : spec.Range t₀,
+                z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀ |
+              (simulateQ cachingOracle oa).run cache₀] := by
+            exact probEvent_exists_finset_le_sum targets
+              ((simulateQ cachingOracle oa).run cache₀)
+              (fun v₀ (z : α × QueryCache spec) =>
+              ∃ t₀ : spec.Domain, ∃ v : spec.Range t₀,
+                z.2 t₀ = some v ∧ cache₀ t₀ = none ∧ HEq v v₀)
+    _ ≤ ∑ _v₀ ∈ targets,
+          ((n : ℝ≥0∞) * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹) := by
+            refine Finset.sum_le_sum ?_
+            intro v₀ _hv₀
+            exact probEvent_cache_has_value_le_of_noCollision oa n hbound hrange v₀ cache₀ hno
+    _ = (targets.card : ℝ≥0∞) *
+          ((n : ℝ≥0∞) * (Fintype.card (spec.Range default) : ℝ≥0∞)⁻¹) := by
+            simp [Finset.sum_const, nsmul_eq_mul]
 
 /-- Special case of
 `probEvent_cache_has_value_le_of_unique_preimage` when the initial cache

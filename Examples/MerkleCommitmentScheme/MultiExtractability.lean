@@ -41,6 +41,112 @@ noncomputable def multiExtractabilityErrorTerm (C : Type) [Fintype C]
     (depth t₁ t₂ n : ℕ) : ℝ≥0∞ :=
   (n : ℝ≥0∞) * extractabilityErrorTerm C depth t₁ t₂
 
+/-- Stateful multi-extractability adversary with one shared commit phase and one
+selected opening phase. -/
+structure MultiExtractAdversary (M : Type) (S : Type) (C : Type) (AUX : Type)
+    (depth n t : ℕ) where
+  commit : OracleComp (Oracle M S C) ((Fin n → C) × AUX)
+  open_ : AUX → OracleComp (Oracle M S C) (Σ _ : Fin n, OpeningData M S C depth)
+  t₁ : ℕ
+  t₂ : ℕ
+  totalBound : t₁ + t₂ ≤ t
+  commitBound : IsTotalQueryBound commit t₁
+  openBound : ∀ aux, IsTotalQueryBound (open_ aux) t₂
+
+/-- Transcript for the stateful multi-commitment witness game. It stores the
+shared commit trace, the selected commitment/opening, and the selected
+single-check verifier trace. -/
+structure MultiExtractabilityStatefulWitnessTranscript
+    (M : Type) (S : Type) (C : Type) (AUX : Type) (depth n : ℕ) where
+  commitments : Fin n → C
+  aux : AUX
+  commitTrace : QueryLog (Oracle M S C)
+  opening : Σ _ : Fin n, OpeningData M S C depth
+  openTrace : QueryLog (Oracle M S C)
+  witness? : Option {i // i ∈ opening.2.I}
+  singleCheck? : Option (Bool × QueryLog (Oracle M S C))
+
+/-- View a stateful selected multi transcript as the corresponding
+single-commitment witness transcript for its selected coordinate. -/
+def MultiExtractabilityStatefulWitnessTranscript.toWitnessTranscript
+    {depth n : ℕ}
+    (x : MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n) :
+    WitnessExtractTranscript M S C AUX depth where
+  base :=
+    { commitment := x.commitments x.opening.1
+      aux := x.aux
+      commitTrace := x.commitTrace
+      opening := x.opening.2
+      openTrace := x.openTrace }
+  witness? := x.witness?
+  singleCheck? := x.singleCheck?
+
+/-- ROM win event for the stateful multi witness game, delegated to the
+single-commitment witness predicate on the selected coordinate. -/
+noncomputable def MultiExtractabilityStatefulWitnessWinROM
+    [DecidableEq S] [DecidableEq C]
+    {depth n : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
+    (z :
+      MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n ×
+        QueryCache (Oracle M S C)) : Prop :=
+  WitnessExtractabilityWinROM (M := M) (S := S) (C := C)
+    (z.1.toWitnessTranscript, z.2)
+
+/-- Inner stateful multi-extractability witness experiment before running under
+the shared cached ROM. It logs one shared commit phase, one selected open phase,
+and only the selected single-check verifier path. -/
+noncomputable def multiExtractabilityStatefulWitnessInner
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    {depth n t : ℕ}
+    (A : MultiExtractAdversary M S C AUX depth n t) :
+    OracleComp (Oracle M S C)
+      (MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n) := do
+  let ((commitments, aux), commitTrace) ← (simulateQ loggingOracle A.commit).run
+  let (opening, openTrace) ← (simulateQ loggingOracle (A.open_ aux)).run
+  let base : ExtractTranscript M S C AUX depth :=
+    { commitment := commitments opening.1
+      aux := aux
+      commitTrace := commitTrace
+      opening := opening.2
+      openTrace := openTrace }
+  match selectWitness? (M := M) (S := S) (C := C) base with
+  | none =>
+      pure
+        { commitments := commitments
+          aux := aux
+          commitTrace := commitTrace
+          opening := opening
+          openTrace := openTrace
+          witness? := none
+          singleCheck? := none }
+  | some i =>
+      let single ←
+        (simulateQ loggingOracle
+          (checkSingle (M := M) (S := S) (C := C)
+            (commitments opening.1) i.1 (opening.2.message i) (opening.2.proof i))).run
+      pure
+        { commitments := commitments
+          aux := aux
+          commitTrace := commitTrace
+          opening := opening
+          openTrace := openTrace
+          witness? := some i
+          singleCheck? := some single }
+
+/-- Stateful multi-extractability witness game with a shared commit trace and a
+single selected verifier path. -/
+noncomputable def multiExtractabilityStatefulWitnessGame
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    {depth n t : ℕ}
+    (A : MultiExtractAdversary M S C AUX depth n t) :
+    OracleComp (Oracle M S C)
+      (MultiExtractabilityStatefulWitnessTranscript M S C AUX depth n ×
+        QueryCache (Oracle M S C)) :=
+  (simulateQ cachingOracle
+    (multiExtractabilityStatefulWitnessInner (M := M) (S := S) (C := C) A)).run ∅
+
 /-- A family-level extractability win implies a family-level bad event. -/
 theorem multi_extractabilityWin_implies_badEvent {depth n : ℕ}
     [DecidableEq C] [Inhabited M] [Inhabited S] [Inhabited C]

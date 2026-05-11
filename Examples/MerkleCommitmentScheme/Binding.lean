@@ -61,6 +61,11 @@ def BindingCollisionEvent [DecidableEq C] {depth : ℕ}
       (check (M := M) (S := S) (C := C)
         out.commitment out.I₁ out.message₁ out.proof₁)).2
 
+private theorem crossLogCollision_iff_oracleComp_logCrossCollision
+    {log₀ log₁ : QueryLog (Oracle M S C)} :
+    CrossLogCollision log₀ log₁ ↔ OracleComp.LogCrossCollision log₀ log₁ := by
+  rfl
+
 /-- The Boolean binding experiment run against a shared lazy random oracle. -/
 noncomputable def bindingInner [DecidableEq M] [DecidableEq C] {depth t : ℕ}
     (A : BindingAdversary M S C depth t) :
@@ -135,6 +140,13 @@ def BindingWitnessBadEventROM {depth : ℕ}
     (z : BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)) : Prop :=
   CacheHasCollision z.2
 
+private def BindingWitnessRestLogCrossEvent {depth : ℕ}
+    (z : BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)) : Prop :=
+  ∃ (single₀ single₁ : Bool × QueryLog (Oracle M S C)),
+    z.1.single₀? = some single₀ ∧
+    z.1.single₁? = some single₁ ∧
+    OracleComp.LogCrossCollision single₀.2 single₁.2
+
 /-- Witness-index binding experiment: run the adversary, select one conflicting
 shared index, and log only the two single-check verifier runs for that index. -/
 noncomputable def bindingWitnessInner [DecidableEq C] {depth t : ℕ}
@@ -175,6 +187,44 @@ noncomputable def bindingWitnessGame [DecidableEq M] [DecidableEq S] [DecidableE
       (BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)) :=
   (simulateQ cachingOracle (bindingWitnessInner (M := M) (S := S) (C := C) A)).run ∅
 
+/-- Origin-aware transcript for the textbook witness binding game. It records
+the adversary/commit cache separately from the verifier-rest cache growth. -/
+structure BindingTextbookWitnessTranscript
+    (M : Type) (S : Type) (C : Type) (depth : ℕ) where
+  out : BindingOutput M S C depth
+  commitCache : QueryCache (Oracle M S C)
+  witness? : Option (BindingMismatchWitness (M := M) (S := S) (C := C) out)
+  single₀? : Option (Bool × QueryLog (Oracle M S C))
+  single₁? : Option (Bool × QueryLog (Oracle M S C))
+
+/-- Forget the recorded origin cache and recover the ordinary witness
+transcript. -/
+def BindingTextbookWitnessTranscript.toWitnessTranscript {depth : ℕ}
+    (z : BindingTextbookWitnessTranscript M S C depth) :
+    BindingWitnessTranscript M S C depth where
+  out := z.out
+  witness? := z.witness?
+  single₀? := z.single₀?
+  single₁? := z.single₁?
+
+/-- Textbook witness success: the selected checks accept, and the verifier-rest
+phase did not create a fresh query whose answer hits a value already present in
+the adversary/commit cache. -/
+def BindingTextbookWinROM {depth : ℕ}
+    (z : BindingTextbookWitnessTranscript M S C depth × QueryCache (Oracle M S C)) :
+    Prop :=
+  BindingWitnessWinROM (M := M) (S := S) (C := C)
+    (z.1.toWitnessTranscript, z.2) ∧
+    ¬ OracleComp.FreshHitInitialCache z.1.commitCache z.2
+
+private def BindingTextbookRestCreatedEvent {depth : ℕ}
+    (z : BindingTextbookWitnessTranscript M S C depth × QueryCache (Oracle M S C)) :
+    Prop :=
+  ∃ (single₀ single₁ : Bool × QueryLog (Oracle M S C)),
+    z.1.single₀? = some single₀ ∧
+    z.1.single₁? = some single₁ ∧
+    OracleComp.RestCreatedLogCrossCollision z.1.commitCache single₀.2 single₁.2
+
 private noncomputable def bindingWitnessCommitPart {depth t : ℕ}
     (A : BindingAdversary M S C depth t) :
     OracleComp (Oracle M S C) (BindingOutput M S C depth) :=
@@ -206,6 +256,35 @@ private noncomputable def bindingWitnessRest [DecidableEq C] {depth : ℕ}
             witness? := some w
             single₀? := some single₀
             single₁? := some single₁ }
+
+/-- Textbook rest phase: run the selected two single-check traces from the
+stored commit cache and keep that commit cache in the transcript. -/
+private noncomputable def bindingTextbookWitnessRest [DecidableEq C] {depth : ℕ}
+    (commitCache : QueryCache (Oracle M S C))
+    (out : BindingOutput M S C depth) :
+    OracleComp (Oracle M S C)
+      (BindingTextbookWitnessTranscript M S C depth) := do
+  let base ← bindingWitnessRest (M := M) (S := S) (C := C) out
+  pure
+    { out := base.out
+      commitCache := commitCache
+      witness? := base.witness?
+      single₀? := base.single₀?
+      single₁? := base.single₁? }
+
+/-- Origin-aware textbook witness binding game: run the adversary under the
+cached ROM, store the resulting cache, then run only the selected verifier
+single checks from that cache. -/
+noncomputable def bindingTextbookWitnessGame
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    {depth t : ℕ}
+    (A : BindingAdversary M S C depth t) :
+    OracleComp (Oracle M S C)
+      (BindingTextbookWitnessTranscript M S C depth × QueryCache (Oracle M S C)) :=
+  (simulateQ cachingOracle
+    (bindingWitnessCommitPart (M := M) (S := S) (C := C) A)).run ∅ >>= fun p =>
+    (simulateQ cachingOracle
+      (bindingTextbookWitnessRest (M := M) (S := S) (C := C) p.2 p.1)).run p.2
 
 private theorem bindingWitnessInner_eq_bind [DecidableEq C] {depth t : ℕ}
     (A : BindingAdversary M S C depth t) :
@@ -268,6 +347,32 @@ private theorem bindingWitnessRest_totalQueryBound
             isTotalQueryBound_bind (n₁ := depth + 1) (n₂ := 0) hcheck₁
               fun _ => trivial
     exact htwoRaw.mono (by omega)
+
+private theorem bindingTextbookWitnessRest_totalQueryBound
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C]
+    {depth : ℕ}
+    (commitCache : QueryCache (Oracle M S C))
+    (out : BindingOutput M S C depth) :
+    IsTotalQueryBound
+      (bindingTextbookWitnessRest (M := M) (S := S) (C := C) commitCache out)
+      (2 * (depth + 1)) := by
+  unfold bindingTextbookWitnessRest
+  have hraw :
+      IsTotalQueryBound
+        (bindingWitnessRest (M := M) (S := S) (C := C) out >>= fun base =>
+          pure
+            ({ out := base.out
+               commitCache := commitCache
+               witness? := base.witness?
+               single₀? := base.single₀?
+               single₁? := base.single₁? } :
+              BindingTextbookWitnessTranscript M S C depth))
+        ((2 * (depth + 1)) + 0) := by
+    exact isTotalQueryBound_bind (n₁ := 2 * (depth + 1)) (n₂ := 0)
+      (bindingWitnessRest_totalQueryBound (M := M) (S := S) (C := C) out)
+      fun _ => trivial
+  exact hraw.mono (by omega)
 
 private theorem bindingWitnessInner_totalQueryBound
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -442,6 +547,231 @@ private theorem logEval_oracleFnOfCache_eq_of_cached_logging {α : Type}
             (cache := cacheFinal) (t := t) (v := u) hcacheFinal
       simp [logEval_bind, logEval_query, hu, htail]
 
+private theorem bindingWitnessRest_win_implies_logCrossEvent_of_support
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype C] [Inhabited C]
+    {depth : ℕ}
+    (out : BindingOutput M S C depth)
+    {cache₀ : QueryCache (Oracle M S C)}
+    {z : BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)}
+    (hz : z ∈ support
+      ((simulateQ cachingOracle
+        (bindingWitnessRest (M := M) (S := S) (C := C) out)).run cache₀))
+    (hwin : BindingWitnessWinROM (M := M) (S := S) (C := C) z) :
+    BindingWitnessRestLogCrossEvent (M := M) (S := S) (C := C) z := by
+  classical
+  unfold bindingWitnessRest at hz
+  cases hsel : selectBindingMismatchWitness? (M := M) (S := S) (C := C) out with
+  | none =>
+      simp [hsel] at hz
+      subst z
+      rcases hwin with ⟨w, single₀, single₁, hw, hsingle₀, hsingle₁, _, _⟩
+      simp at hw
+  | some w =>
+      let i₀ : {i // i ∈ out.I₀} := ⟨w.idx, w.leftMem⟩
+      let i₁ : {i // i ∈ out.I₁} := ⟨w.idx, w.rightMem⟩
+      let check₀ :=
+        checkSingle (M := M) (S := S) (C := C)
+          out.commitment w.idx (out.message₀ i₀) (out.proof₀ i₀)
+      let check₁ :=
+        checkSingle (M := M) (S := S) (C := C)
+          out.commitment w.idx (out.message₁ i₁) (out.proof₁ i₁)
+      simp only [hsel] at hz
+      change z ∈ support
+        ((simulateQ cachingOracle
+          ((simulateQ loggingOracle check₀).run >>= fun single₀ =>
+            (simulateQ loggingOracle check₁).run >>= fun single₁ =>
+              pure
+                ({ out := out
+                   witness? := some w
+                   single₀? := some single₀
+                   single₁? := some single₁ } :
+                  BindingWitnessTranscript M S C depth))).run cache₀) at hz
+      rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
+      simp only [Set.mem_iUnion] at hz
+      rcases hz with ⟨⟨single₀, cache₁⟩, hsingle₀Support, hz⟩
+      rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
+      simp only [Set.mem_iUnion] at hz
+      rcases hz with ⟨⟨single₁, cache₂⟩, hsingle₁Support, hz⟩
+      simp at hz
+      subst z
+      rcases hwin with
+        ⟨wWin, single₀Win, single₁Win, hw, hsingle₀, hsingle₁, hok₀, hok₁⟩
+      cases hw
+      cases hsingle₀
+      cases hsingle₁
+      let f := oracleFnOfCache (M := M) (S := S) (C := C) cache₂
+      have hmono₁₂ : cache₁ ≤ cache₂ := by
+        exact OracleComp.simulateQ_cachingOracle_cache_le
+          (spec := Oracle M S C) ((simulateQ loggingOracle check₁).run)
+          cache₁ (single₁, cache₂) hsingle₁Support
+      have hlog₀ : logEval (M := M) (S := S) (C := C) f check₀ = single₀ := by
+        exact logEval_oracleFnOfCache_eq_of_cached_logging
+          (M := M) (S := S) (C := C) check₀
+          (cache₀ := cache₀) (cacheFinal := cache₂)
+          (z := (single₀, cache₁)) hsingle₀Support hmono₁₂
+      have hlog₁ : logEval (M := M) (S := S) (C := C) f check₁ = single₁ := by
+        exact logEval_oracleFnOfCache_eq_of_cached_logging
+          (M := M) (S := S) (C := C) check₁
+          (cache₀ := cache₁) (cacheFinal := cache₂)
+          (z := (single₁, cache₂)) hsingle₁Support (le_refl cache₂)
+      have hcheck₀ : eval (M := M) (S := S) (C := C) f check₀ = true := by
+        have hfst : (logEval (M := M) (S := S) (C := C) f check₀).1 = true := by
+          simpa [hlog₀] using hok₀.symm
+        simpa [logEval_fst_eq_eval (M := M) (S := S) (C := C) f check₀] using hfst
+      have hcheck₁ : eval (M := M) (S := S) (C := C) f check₁ = true := by
+        have hfst : (logEval (M := M) (S := S) (C := C) f check₁).1 = true := by
+          simpa [hlog₁] using hok₁.symm
+        simpa [logEval_fst_eq_eval (M := M) (S := S) (C := C) f check₁] using hfst
+      have hcollision :
+          CrossLogCollision
+            (logEval (M := M) (S := S) (C := C) f check₀).2
+            (logEval (M := M) (S := S) (C := C) f check₁).2 := by
+        dsimp [check₀, check₁] at hcheck₀ hcheck₁
+        exact checkSingle_crossLogCollision (M := M) (S := S) (C := C)
+          f out.commitment w.idx (out.message₀ i₀) (out.message₁ i₁)
+          (out.proof₀ i₀) (out.proof₁ i₁) hcheck₀ hcheck₁
+          (Or.inl w.mismatch)
+      have hcollisionStored :
+          OracleComp.LogCrossCollision single₀.2 single₁.2 := by
+        exact
+          (crossLogCollision_iff_oracleComp_logCrossCollision
+            (M := M) (S := S) (C := C)).mp
+            (by simpa [hlog₀, hlog₁] using hcollision)
+      exact ⟨single₀, single₁, rfl, rfl, hcollisionStored⟩
+
+private theorem bindingWitnessRest_win_bound_of_logCrossEvent_bound
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype C] [Inhabited C]
+    {depth : ℕ}
+    (out : BindingOutput M S C depth)
+    (cache₀ : QueryCache (Oracle M S C))
+    (ε : ℝ≥0∞)
+    (hlog :
+      Pr[ fun z => BindingWitnessRestLogCrossEvent (M := M) (S := S) (C := C) z |
+        (simulateQ cachingOracle
+          (bindingWitnessRest (M := M) (S := S) (C := C) out)).run cache₀] ≤ ε) :
+    Pr[ fun z => BindingWitnessWinROM (M := M) (S := S) (C := C) z |
+      (simulateQ cachingOracle
+        (bindingWitnessRest (M := M) (S := S) (C := C) out)).run cache₀] ≤ ε :=
+  le_trans
+    (probEvent_mono fun _ hz hwin =>
+      bindingWitnessRest_win_implies_logCrossEvent_of_support
+        (M := M) (S := S) (C := C) out hz hwin)
+    hlog
+
+private theorem bindingWitnessRest_logCrossEvent_implies_restCreatedEvent_of_support
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype C] [Inhabited C]
+    {depth : ℕ}
+    (out : BindingOutput M S C depth)
+    {cache₀ : QueryCache (Oracle M S C)}
+    {z : BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)}
+    (hz : z ∈ support
+      ((simulateQ cachingOracle
+        (bindingWitnessRest (M := M) (S := S) (C := C) out)).run cache₀))
+    (hlog : BindingWitnessRestLogCrossEvent (M := M) (S := S) (C := C) z)
+    (hnoCollision : ¬ CacheHasCollision cache₀)
+    (hnoFreshHit : ¬ OracleComp.FreshHitInitialCache cache₀ z.2) :
+    ∃ (single₀ single₁ : Bool × QueryLog (Oracle M S C)),
+      z.1.single₀? = some single₀ ∧
+      z.1.single₁? = some single₁ ∧
+      OracleComp.RestCreatedLogCrossCollision cache₀ single₀.2 single₁.2 := by
+  classical
+  unfold bindingWitnessRest at hz
+  cases hsel : selectBindingMismatchWitness? (M := M) (S := S) (C := C) out with
+  | none =>
+      simp [hsel] at hz
+      subst z
+      rcases hlog with ⟨single₀, single₁, hsingle₀, _hsingle₁, _hcross⟩
+      simp at hsingle₀
+  | some w =>
+      let i₀ : {i // i ∈ out.I₀} := ⟨w.idx, w.leftMem⟩
+      let i₁ : {i // i ∈ out.I₁} := ⟨w.idx, w.rightMem⟩
+      let check₀ :=
+        checkSingle (M := M) (S := S) (C := C)
+          out.commitment w.idx (out.message₀ i₀) (out.proof₀ i₀)
+      let check₁ :=
+        checkSingle (M := M) (S := S) (C := C)
+          out.commitment w.idx (out.message₁ i₁) (out.proof₁ i₁)
+      simp only [hsel] at hz
+      change z ∈ support
+        ((simulateQ cachingOracle
+          ((simulateQ loggingOracle check₀).run >>= fun single₀ =>
+            (simulateQ loggingOracle check₁).run >>= fun single₁ =>
+              pure
+                ({ out := out
+                   witness? := some w
+                   single₀? := some single₀
+                   single₁? := some single₁ } :
+                  BindingWitnessTranscript M S C depth))).run cache₀) at hz
+      rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
+      simp only [Set.mem_iUnion] at hz
+      rcases hz with ⟨⟨single₀, cache₁⟩, hsingle₀Support, hz⟩
+      rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
+      simp only [Set.mem_iUnion] at hz
+      rcases hz with ⟨⟨single₁, cache₂⟩, hsingle₁Support, hz⟩
+      simp at hz
+      subst z
+      rcases hlog with ⟨single₀Log, single₁Log, hsingle₀, hsingle₁, hcross⟩
+      have hsingle₀Eq : single₀Log = single₀ := by
+        simpa using (Option.some.inj hsingle₀).symm
+      have hsingle₁Eq : single₁Log = single₁ := by
+        simpa using (Option.some.inj hsingle₁).symm
+      subst single₀Log
+      subst single₁Log
+      have h₀ :=
+        OracleComp.log_entry_in_cache_and_mono
+          (spec := Oracle M S C) check₀ cache₀ (single₀, cache₁)
+          hsingle₀Support
+      have h₁ :=
+        OracleComp.log_entry_in_cache_and_mono
+          (spec := Oracle M S C) check₁ cache₁ (single₁, cache₂)
+          hsingle₁Support
+      have hrest :
+          OracleComp.RestCreatedLogCrossCollision cache₀ single₀.2 single₁.2 :=
+        OracleComp.LogCrossCollision.to_restCreated_of_no_initial_collision_no_freshHit
+          (spec := Oracle M S C)
+          (cache₀ := cache₀) (cache₁ := cache₂)
+          (log₀ := single₀.2) (log₁ := single₁.2)
+          (le_trans h₀.2 h₁.2)
+          (fun entry hentry => h₁.2 (h₀.1 entry hentry))
+          (fun entry hentry => h₁.1 entry hentry)
+          hnoCollision hnoFreshHit hcross
+      exact ⟨single₀, single₁, rfl, rfl, hrest⟩
+
+private theorem bindingTextbookWitnessRest_win_implies_restCreatedEvent_of_support
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype C] [Inhabited C]
+    {depth : ℕ}
+    (out : BindingOutput M S C depth)
+    (commitCache : QueryCache (Oracle M S C))
+    {z : BindingTextbookWitnessTranscript M S C depth × QueryCache (Oracle M S C)}
+    (hz : z ∈ support
+      ((simulateQ cachingOracle
+        (bindingTextbookWitnessRest (M := M) (S := S) (C := C)
+          commitCache out)).run commitCache))
+    (hnoCollision : ¬ CacheHasCollision commitCache)
+    (hwin : BindingTextbookWinROM (M := M) (S := S) (C := C) z) :
+    BindingTextbookRestCreatedEvent (M := M) (S := S) (C := C) z := by
+  classical
+  unfold bindingTextbookWitnessRest at hz
+  rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
+  simp only [Set.mem_iUnion] at hz
+  rcases hz with ⟨baseZ, hbase, hz⟩
+  simp [simulateQ_pure, StateT.run] at hz
+  subst z
+  rcases hwin with ⟨hbaseWin, hnoFreshHit⟩
+  have hlog :
+      BindingWitnessRestLogCrossEvent (M := M) (S := S) (C := C) baseZ :=
+    bindingWitnessRest_win_implies_logCrossEvent_of_support
+      (M := M) (S := S) (C := C) out hbase hbaseWin
+  rcases
+      bindingWitnessRest_logCrossEvent_implies_restCreatedEvent_of_support
+        (M := M) (S := S) (C := C) out hbase hlog hnoCollision hnoFreshHit
+    with ⟨single₀, single₁, hsingle₀, hsingle₁, hrest⟩
+  exact ⟨single₀, single₁, by simpa using hsingle₀, by simpa using hsingle₁, hrest⟩
+
 private theorem bindingWitnessWinROM_implies_badEventROM_of_support
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited C]
@@ -613,6 +943,206 @@ theorem binding_bound_wholeCache {depth t : ℕ}
           simpa [bindingWitnessGame, BindingWitnessBadEventROM, bindingWitnessErrorTerm,
             oracleRange_card_eq (M := M) (S := S) (C := C) default] using hbirthday
 
+private theorem bindingWitnessGame_bound_of_rest_logCrossEvent_bound {depth t : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : BindingAdversary M S C depth t)
+    (hC : 0 < Fintype.card C)
+    (hrest :
+      ∀ (out : BindingOutput M S C depth)
+        (cache₁ : QueryCache (Oracle M S C)),
+        (out, cache₁) ∈ support
+          ((simulateQ cachingOracle
+            (bindingWitnessCommitPart (M := M) (S := S) (C := C) A)).run ∅) →
+        ¬ CacheHasCollision cache₁ →
+          Pr[ fun z =>
+            BindingWitnessRestLogCrossEvent (M := M) (S := S) (C := C) z |
+            (simulateQ cachingOracle
+              (bindingWitnessRest (M := M) (S := S) (C := C) out)).run cache₁] ≤
+            ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C)) :
+    Pr[ fun z => BindingWitnessWinROM (M := M) (S := S) (C := C) z |
+      bindingWitnessGame (M := M) (S := S) (C := C) A] ≤
+      bindingErrorTerm C depth t := by
+  classical
+  let commitPart :=
+    bindingWitnessCommitPart (M := M) (S := S) (C := C) A
+  let restPart :=
+    fun x : BindingOutput M S C depth × QueryCache (Oracle M S C) =>
+      (simulateQ cachingOracle
+        (bindingWitnessRest (M := M) (S := S) (C := C) x.1)).run x.2
+  let ε₁ : ℝ≥0∞ :=
+    ((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
+  let ε₂ : ℝ≥0∞ :=
+    (((depth + 1) ^ 2 : ℕ) / Fintype.card C)
+  have hCdefault :
+      0 < Fintype.card ((Oracle M S C).Range default) := by
+    simpa [oracleRange_card_eq (M := M) (S := S) (C := C) default] using hC
+  have hcommit :
+      Pr[fun x => ¬ (¬ CacheHasCollision x.2) |
+        (simulateQ cachingOracle commitPart).run ∅] ≤ ε₁ := by
+    have hbirthday :=
+      probEvent_cacheCollision_le_birthday_total_tight
+        (spec := Oracle M S C)
+        (oa := commitPart)
+        t
+        (by
+          simpa [commitPart, bindingWitnessCommitPart] using A.queryBound)
+        hCdefault
+        (oracleRange_card_le (M := M) (S := S) (C := C))
+    simpa [ε₁, oracleRange_card_eq (M := M) (S := S) (C := C) default,
+      not_not] using hbirthday
+  have hrestWin :
+      ∀ x ∈ support ((simulateQ cachingOracle commitPart).run ∅),
+        ¬ CacheHasCollision x.2 →
+          Pr[fun z => ¬
+              (¬ BindingWitnessWinROM (M := M) (S := S) (C := C) z) |
+            restPart x] ≤ ε₂ := by
+    intro x hx hno
+    rcases x with ⟨out, cache₁⟩
+    have hlog :
+        Pr[fun z =>
+          BindingWitnessRestLogCrossEvent (M := M) (S := S) (C := C) z |
+          (simulateQ cachingOracle
+            (bindingWitnessRest (M := M) (S := S) (C := C) out)).run cache₁] ≤
+          ε₂ := by
+      simpa [commitPart, ε₂] using hrest out cache₁ (by simpa [commitPart] using hx) hno
+    have hwin :=
+      bindingWitnessRest_win_bound_of_logCrossEvent_bound
+        (M := M) (S := S) (C := C) out cache₁ ε₂ hlog
+    simpa [restPart, ε₂, not_not] using hwin
+  have hcombine :=
+    probEvent_bind_le_add
+      (mx := (simulateQ cachingOracle commitPart).run ∅)
+      (my := restPart)
+      (p := fun x => ¬ CacheHasCollision x.2)
+      (q := fun z => ¬ BindingWitnessWinROM (M := M) (S := S) (C := C) z)
+      (ε₁ := ε₁)
+      (ε₂ := ε₂)
+      hcommit hrestWin
+  rw [bindingWitnessGame, bindingWitnessInner_eq_bind (M := M) (S := S) (C := C) A,
+    simulateQ_bind, StateT.run_bind]
+  simpa [commitPart, restPart, ε₁, ε₂, bindingWitnessCommitPart,
+    bindingErrorTerm, not_not] using hcombine
+
+/-- Conditional textbook combiner for the origin-aware witness game.
+
+The hypothesis is the still-missing rest-phase estimate: once the adversary
+cache is collision-free, the conditioned selected-check win is bounded by the
+single-pair verifier term. -/
+theorem bindingTextbookWitnessGame_bound_of_rest_win_bound {depth t : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : BindingAdversary M S C depth t)
+    (hC : 0 < Fintype.card C)
+    (hrest :
+      ∀ (out : BindingOutput M S C depth)
+        (cache₁ : QueryCache (Oracle M S C)),
+        (out, cache₁) ∈ support
+          ((simulateQ cachingOracle
+            (bindingWitnessCommitPart (M := M) (S := S) (C := C) A)).run ∅) →
+        ¬ CacheHasCollision cache₁ →
+          Pr[ fun z =>
+            BindingTextbookWinROM (M := M) (S := S) (C := C) z |
+            (simulateQ cachingOracle
+              (bindingTextbookWitnessRest (M := M) (S := S) (C := C)
+                cache₁ out)).run cache₁] ≤
+            ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C)) :
+    Pr[ fun z => BindingTextbookWinROM (M := M) (S := S) (C := C) z |
+      bindingTextbookWitnessGame (M := M) (S := S) (C := C) A] ≤
+      bindingErrorTerm C depth t := by
+  classical
+  let commitPart :=
+    bindingWitnessCommitPart (M := M) (S := S) (C := C) A
+  let restPart :=
+    fun x : BindingOutput M S C depth × QueryCache (Oracle M S C) =>
+      (simulateQ cachingOracle
+        (bindingTextbookWitnessRest (M := M) (S := S) (C := C) x.2 x.1)).run x.2
+  let ε₁ : ℝ≥0∞ :=
+    ((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * Fintype.card C)
+  let ε₂ : ℝ≥0∞ :=
+    (((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C
+  have hCdefault :
+      0 < Fintype.card ((Oracle M S C).Range default) := by
+    simpa [oracleRange_card_eq (M := M) (S := S) (C := C) default] using hC
+  have hcommit :
+      Pr[fun x => ¬ (¬ CacheHasCollision x.2) |
+        (simulateQ cachingOracle commitPart).run ∅] ≤ ε₁ := by
+    have hbirthday :=
+      probEvent_cacheCollision_le_birthday_total_tight
+        (spec := Oracle M S C)
+        (oa := commitPart)
+        t
+        (by
+          simpa [commitPart, bindingWitnessCommitPart] using A.queryBound)
+        hCdefault
+        (oracleRange_card_le (M := M) (S := S) (C := C))
+    simpa [ε₁, oracleRange_card_eq (M := M) (S := S) (C := C) default,
+      not_not] using hbirthday
+  have hrestWin :
+      ∀ x ∈ support ((simulateQ cachingOracle commitPart).run ∅),
+        ¬ CacheHasCollision x.2 →
+          Pr[fun z => ¬
+              (¬ BindingTextbookWinROM (M := M) (S := S) (C := C) z) |
+            restPart x] ≤ ε₂ := by
+    intro x hx hno
+    rcases x with ⟨out, cache₁⟩
+    have hwin :
+        Pr[fun z =>
+          BindingTextbookWinROM (M := M) (S := S) (C := C) z |
+          (simulateQ cachingOracle
+            (bindingTextbookWitnessRest (M := M) (S := S) (C := C)
+              cache₁ out)).run cache₁] ≤ ε₂ := by
+      simpa [commitPart, ε₂] using hrest out cache₁ (by simpa [commitPart] using hx) hno
+    simpa [restPart, ε₂, not_not] using hwin
+  have hcombine :=
+    probEvent_bind_le_add
+      (mx := (simulateQ cachingOracle commitPart).run ∅)
+      (my := restPart)
+      (p := fun x => ¬ CacheHasCollision x.2)
+      (q := fun z => ¬ BindingTextbookWinROM (M := M) (S := S) (C := C) z)
+      (ε₁ := ε₁)
+      (ε₂ := ε₂)
+      hcommit hrestWin
+  rw [bindingTextbookWitnessGame]
+  simpa [commitPart, restPart, ε₁, ε₂, bindingWitnessCommitPart,
+    bindingErrorTerm, not_not] using hcombine
+
+/-- Conditional textbook combiner using the precise rest-created cross-collision
+event. This is the form consumed by the final product-bound ROM lemma. -/
+theorem bindingTextbookWitnessGame_bound_of_restCreatedEvent_bound {depth t : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : BindingAdversary M S C depth t)
+    (hC : 0 < Fintype.card C)
+    (hrest :
+      ∀ (out : BindingOutput M S C depth)
+        (cache₁ : QueryCache (Oracle M S C)),
+        (out, cache₁) ∈ support
+          ((simulateQ cachingOracle
+            (bindingWitnessCommitPart (M := M) (S := S) (C := C) A)).run ∅) →
+        ¬ CacheHasCollision cache₁ →
+          Pr[ fun z =>
+            BindingTextbookRestCreatedEvent (M := M) (S := S) (C := C) z |
+            (simulateQ cachingOracle
+              (bindingTextbookWitnessRest (M := M) (S := S) (C := C)
+                cache₁ out)).run cache₁] ≤
+            ((((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C)) :
+    Pr[ fun z => BindingTextbookWinROM (M := M) (S := S) (C := C) z |
+      bindingTextbookWitnessGame (M := M) (S := S) (C := C) A] ≤
+      bindingErrorTerm C depth t := by
+  refine
+    bindingTextbookWitnessGame_bound_of_rest_win_bound
+      (M := M) (S := S) (C := C) A hC ?_
+  intro out cache₁ hsupport hnoCollision
+  exact le_trans
+    (probEvent_mono fun z hz hwin =>
+      bindingTextbookWitnessRest_win_implies_restCreatedEvent_of_support
+        (M := M) (S := S) (C := C) out cache₁ hz hnoCollision hwin)
+    (hrest out cache₁ hsupport hnoCollision)
+
 /-- Conditional textbook binding combiner for the witness-index ROM game.
 
 The remaining hypothesis is exactly the tighter pair-fresh estimate for the two
@@ -763,6 +1293,23 @@ noncomputable def honestBindingGame
 def HonestBindingWinROM {depth : ℕ}
     (z : BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)) : Prop :=
   BindingWitnessWinROM (M := M) (S := S) (C := C) z
+
+/-- Origin-aware honest-binding witness game, using the conditioned textbook
+binding transcript surface. -/
+noncomputable def honestBindingTextbookGame
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    {depth t : ℕ}
+    (A : HonestBindingAdversary M S C AUX depth t) :
+    OracleComp (Oracle M S C)
+      (BindingTextbookWitnessTranscript M S C depth × QueryCache (Oracle M S C)) :=
+  bindingTextbookWitnessGame (M := M) (S := S) (C := C)
+    (honestBindingAsBindingAdversary (M := M) (S := S) (C := C) A)
+
+/-- Honest-binding success for the conditioned textbook witness game. -/
+def HonestBindingTextbookWinROM {depth : ℕ}
+    (z : BindingTextbookWitnessTranscript M S C depth × QueryCache (Oracle M S C)) :
+    Prop :=
+  BindingTextbookWinROM (M := M) (S := S) (C := C) z
 
 /-- Honest-binding fallback currently uses the same witness-index ROM bound after the
 honest second opening has been packaged as a binding witness game. -/
