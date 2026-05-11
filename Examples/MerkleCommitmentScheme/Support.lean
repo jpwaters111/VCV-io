@@ -6,3 +6,4 @@ Authors: OpenAI Codex
 import Examples.MerkleCommitmentScheme.Support.Indexing
 import Examples.MerkleCommitmentScheme.Support.Trace
 import Examples.MerkleCommitmentScheme.Support.QueryBound
+import Examples.MerkleCommitmentScheme.Support.ROM

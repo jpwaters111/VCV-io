@@ -59,7 +59,10 @@ def CacheHasCollision (cache : QueryCache spec) : Prop :=
     t₁ ≠ t₂ ∧ cache t₁ = some u₁ ∧ cache t₂ = some u₂ ∧ HEq u₁ u₂
 
 /-- Two query logs have a cross-collision: one entry from each log has distinct
-inputs but HEq-equal outputs. -/
+inputs but HEq-equal outputs.
+
+Lean event/game: this is the generic log-level event used by Merkle binding
+after reducing two accepted openings to two accepted verifier traces. -/
 def LogCrossCollision (log₀ log₁ : QueryLog spec) : Prop :=
   ∃ entry₀ ∈ log₀, ∃ entry₁ ∈ log₁, entry₀.1 ≠ entry₁.1 ∧ HEq entry₀.2 entry₁.2
 
@@ -70,15 +73,23 @@ def LogEntryFresh (cache : QueryCache spec)
   cache entry.1 = none
 
 /-- A later cache contains a fresh entry whose output matches an entry already
-present in the initial cache. This is the explicit cache-hit event that must be
-excluded to recover the textbook verifier-rest binding term. -/
+present in the initial cache.
+
+Lean event/game: this is the generic fresh-hit event used by origin-aware
+Merkle binding to separate adversary-cache hits from verifier-rest collisions.
+
+Scope note: excluding or bounding this event is what permits a separate
+`(depth + 1)^2 / |C|` verifier-rest term. -/
 def FreshHitInitialCache (cache₀ cache₁ : QueryCache spec) : Prop :=
   ∃ (tNew tOld : spec.Domain) (uNew : spec.Range tNew) (uOld : spec.Range tOld),
     cache₀ tNew = none ∧ cache₁ tNew = some uNew ∧
       cache₀ tOld = some uOld ∧ tNew ≠ tOld ∧ HEq uNew uOld
 
 /-- A cross-log collision where both colliding log entries are fresh relative to
-the same initial cache. -/
+the same initial cache.
+
+Lean event/game: this is the rest-created collision charged to the verifier
+part of the conditioned Merkle binding theorem. -/
 def RestCreatedLogCrossCollision (cache : QueryCache spec)
     (log₀ log₁ : QueryLog spec) : Prop :=
   ∃ entry₀ ∈ log₀, ∃ entry₁ ∈ log₁,
@@ -1677,8 +1688,18 @@ theorem probEvent_cacheCollision_le_birthday_total {α : Type}
         gcongr; exact_mod_cast (show n * (n - 1) ≤ n ^ 2 by nlinarith [Nat.sub_le n 1])
 
 /-- Conservative generic bound for cross-collision between two cached logged
-computations from an empty cache, via the final-cache birthday bound for the
-combined computation. -/
+computations from an empty cache.
+
+Textbook statement: a cross-log collision can always be charged to a collision
+in the final cache.
+
+Lean event/game: `LogCrossCollision` between two logged computations run under
+one shared cache.
+
+Bound expression: `(n₀ + n₁)^2 / (2 * |Range default|)`.
+
+Scope note: this is a whole-cache fallback, not the tighter product bound for
+origin-aware rest-created verifier collisions. -/
 theorem probEvent_logCrossCollision_cached_two_le_birthday_total {α β : Type}
     [Inhabited ι]
     (oa₀ : OracleComp spec α) (oa₁ : OracleComp spec β)
@@ -2011,8 +2032,16 @@ theorem probEvent_cache_has_value_le_of_noCollision {α : Type}
   by_contra hne
   exact hno ⟨t₀, t₁, v₁, v₂, hne, hcache₀, hcache₁, hheq₀.trans hheq₁.symm⟩
 
-/-- A union-bound version of `probEvent_cache_has_value_le_of_noCollision` for a finite
-set of target outputs. -/
+/-- A union-bound version of `probEvent_cache_has_value_le_of_noCollision` for
+a finite set of target outputs.
+
+Textbook statement: fresh random-oracle queries hit a known target set with
+probability at most query-count times target-count divided by output size.
+
+Lean event/game: a cached computation starting from a collision-free cache
+creates a fresh cache entry whose output is HEq-equal to one of `targets`.
+
+Bound expression: `targets.card * n / |Range default|`. -/
 theorem probEvent_cache_has_value_mem_finset_le_of_noCollision {α : Type}
     [Inhabited ι]
     (oa : OracleComp spec α)

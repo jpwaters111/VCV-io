@@ -5,4 +5,5 @@ Authors: OpenAI Codex, jpwaters
 -/
 import Examples.CommitmentScheme.Support.MainCompat
 import Examples.CommitmentScheme.Support.QueryBound
+import Examples.CommitmentScheme.Support.Probability
 import Examples.CommitmentScheme.Support.Collision
