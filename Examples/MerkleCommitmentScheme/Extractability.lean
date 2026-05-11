@@ -2874,8 +2874,8 @@ private theorem witnessBadEventROM_game_bound {depth t : ℕ}
   simpa [commitPart, restPart, ε₁, ε₂, extractabilityErrorTerm, not_not] using hcombine
 
 /-- Conditional witness-game extractability combiner specialized to
-`extractabilityWitnessGame`. The remaining hypothesis is exactly the textbook
-bad-event estimate for this stateful ROM experiment. -/
+`extractabilityWitnessGame`. The hypothesis is the bad-event estimate for the
+selected-witness ROM experiment, whose verifier phase logs one single path. -/
 theorem extractability_bound_of_witnessBadEventROM_game_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C] [Fintype C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -2908,8 +2908,8 @@ theorem extractability_bound {depth t : ℕ}
     (M := M) (S := S) (C := C) A
     (witnessBadEventROM_game_bound (M := M) (S := S) (C := C) A hC)
 
-/-- Single-commitment extractability bound obtained from the textbook
-bad-event estimate for the chosen experiment.
+/-- Single-commitment extractability bound obtained from a bad-event estimate
+for the full-batch experiment.
 
 This is intentionally named as a conditional helper: the final ROM theorem
 should prove the bad-event estimate for `extractabilityGame` directly. -/
