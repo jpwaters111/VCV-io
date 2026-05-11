@@ -69,9 +69,11 @@ theorem multi_extractability_bound_of_badEvent_bound {depth n : ℕ}
       multi_extractabilityWin_implies_badEvent (M := M) (S := S) (C := C) f xs hx)
     hbad
 
-/-- Named multi-extractability bound once the union-bound estimate for the
-family-level bad event has been established. -/
-theorem multi_extractability_bound {depth n : ℕ}
+/-- Multi-extractability bound obtained from a family-level bad-event estimate.
+
+This is a conditional helper; the final ROM theorem should prove the
+family-level bad-event estimate for the stateful multi-commitment game. -/
+theorem multi_extractability_bound_of_family_badEvent_bound {depth n : ℕ}
     [DecidableEq C] [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C]
     (f : OracleFn M S C)
     (oa : OracleComp (Oracle M S C)
@@ -87,5 +89,66 @@ theorem multi_extractability_bound {depth n : ℕ}
   multi_extractability_bound_of_badEvent_bound
     (M := M) (S := S) (C := C) f oa
     (multiExtractabilityErrorTerm C depth t₁ t₂ n) hbad
+
+/-- Pointwise witness multi-extractability game for a selected commitment in a
+family. This is the first final ROM surface: the stateful tighter game can be
+introduced later without changing the single-commitment extractor. -/
+noncomputable def multiExtractabilityWitnessGame
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    {depth t n : ℕ}
+    (A : Fin n → ExtractAdversary M S C AUX depth t) (k : Fin n) :
+    OracleComp (Oracle M S C)
+      (WitnessExtractTranscript M S C AUX depth × QueryCache (Oracle M S C)) :=
+  extractabilityWitnessGame (M := M) (S := S) (C := C) (A k)
+
+/-- Pointwise simple union-bound style multi-extractability estimate for a selected
+witness coordinate. Since `k : Fin n`, the family has at least one coordinate,
+so the single-commitment error is bounded by `n` times that error. -/
+theorem multi_extractability_bound_pointwise {depth t n : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : Fin n → ExtractAdversary M S C AUX depth t)
+    (k : Fin n)
+    (hC : 0 < Fintype.card C) :
+    Pr[fun z => WitnessExtractabilityWinROM (M := M) (S := S) (C := C) z |
+      multiExtractabilityWitnessGame (M := M) (S := S) (C := C) A k] ≤
+      multiExtractabilityErrorTerm C depth (A k).t₁ (A k).t₂ n := by
+  have hsingle :=
+    extractability_bound (M := M) (S := S) (C := C) (A := A k) hC
+  have hscale :
+      extractabilityErrorTerm C depth (A k).t₁ (A k).t₂ ≤
+        multiExtractabilityErrorTerm C depth (A k).t₁ (A k).t₂ n := by
+    unfold multiExtractabilityErrorTerm
+    calc
+      extractabilityErrorTerm C depth (A k).t₁ (A k).t₂
+          = (1 : ℝ≥0∞) *
+              extractabilityErrorTerm C depth (A k).t₁ (A k).t₂ := by
+            simp
+      _ ≤ (n : ℝ≥0∞) *
+              extractabilityErrorTerm C depth (A k).t₁ (A k).t₂ := by
+            gcongr
+            have hnpos : 1 ≤ n := by
+              exact Nat.succ_le_of_lt
+                (Nat.lt_of_le_of_lt (Nat.zero_le k.1) k.2)
+            exact_mod_cast hnpos
+  exact le_trans (by
+    simpa [multiExtractabilityWitnessGame] using hsingle) hscale
+
+/-- Final simple multi-extractability estimate for the selected-coordinate
+witness game. This public theorem intentionally uses the pointwise witness game;
+the tighter shared-trace stateful game can be added as a refinement. -/
+theorem multi_extractability_bound {depth t n : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : Fin n → ExtractAdversary M S C AUX depth t)
+    (k : Fin n)
+    (hC : 0 < Fintype.card C) :
+    Pr[fun z => WitnessExtractabilityWinROM (M := M) (S := S) (C := C) z |
+      multiExtractabilityWitnessGame (M := M) (S := S) (C := C) A k] ≤
+      multiExtractabilityErrorTerm C depth (A k).t₁ (A k).t₂ n :=
+  multi_extractability_bound_pointwise (M := M) (S := S) (C := C) A k hC
 
 end MerkleTree

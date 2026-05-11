@@ -1904,6 +1904,825 @@ theorem buildPartialTreeFromTrace_rightChild_get_of_unique_internal_after_passes
     (M := M) (S := S) (C := C) (depth := depth) (layer := layer)
     commitment trace hlayer parent left right answer hparentFinal hchild hmem hunique
 
+/-- Non-dummy label values at one layer of a partial tree. -/
+def knownLabelsAtLayer {depth : ℕ} (labels : PartialLabels C depth)
+    (layer : Fin (depth + 1)) : List C :=
+  (labels layer).toList.filterMap id
+
+/-- Non-dummy label values in a partial tree, listed layer-by-layer. -/
+def knownLabelsList {depth : ℕ} (labels : PartialLabels C depth) : List C :=
+  (List.finRange (depth + 1)).flatMap fun layer => knownLabelsAtLayer labels layer
+
+/-- The finite set of non-dummy label values in a partial tree. -/
+def knownLabels {depth : ℕ} [DecidableEq C] (labels : PartialLabels C depth) : Finset C :=
+  (knownLabelsList labels).toFinset
+
+/-- The finite set of non-dummy label values extracted from a trace. -/
+def traceKnownLabels {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) : Finset C :=
+  knownLabels (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+    (depth := depth) commitment trace)
+
+/-- Internal-query input labels in a trace. These form a compact superset of
+all non-root labels that can become known from the trace. -/
+def internalInputLabels (trace : QueryLog (Oracle M S C)) : List C :=
+  match trace with
+  | [] => []
+  | ⟨Sum.inr (left, right), _⟩ :: rest =>
+      left :: right :: internalInputLabels rest
+  | ⟨Sum.inl _, _⟩ :: rest =>
+      internalInputLabels rest
+
+/-- Root plus all internal-query input labels in a trace. -/
+def traceLabelCandidates (commitment : C) (trace : QueryLog (Oracle M S C)) : List C :=
+  commitment :: internalInputLabels (M := M) (S := S) (C := C) trace
+
+/-- The answer component of a typed Merkle-oracle trace entry, viewed as a
+label value. -/
+def traceEntryAnswer (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) : C :=
+  match entry with
+  | ⟨Sum.inl _, answer⟩ => answer
+  | ⟨Sum.inr _, answer⟩ => answer
+
+theorem mem_knownLabelsAtLayer_iff {depth : ℕ} (labels : PartialLabels C depth)
+    (layer : Fin (depth + 1)) (value : C) :
+    value ∈ knownLabelsAtLayer labels layer ↔
+      ∃ pos : Fin (2 ^ layer.1), (labels layer).get pos = some value := by
+  constructor
+  · intro hmem
+    rcases List.mem_filterMap.mp hmem with ⟨value?, hvalueMem, hvalue⟩
+    cases value? with
+    | none =>
+        simp at hvalue
+    | some value' =>
+        simp at hvalue
+        subst value'
+        have hvec : some value ∈ labels layer := Vector.mem_toList_iff.mp hvalueMem
+        rcases (Vector.mem_iff_getElem.mp hvec) with ⟨i, hi, hget⟩
+        exact ⟨⟨i, hi⟩, by simpa using hget⟩
+  · rintro ⟨pos, hget⟩
+    have hvec : some value ∈ labels layer :=
+      Vector.mem_iff_getElem.mpr ⟨pos.1, pos.2, by simpa using hget⟩
+    exact List.mem_filterMap.mpr
+      ⟨some value, Vector.mem_toList_iff.mpr hvec, rfl⟩
+
+theorem mem_knownLabelsList_iff {depth : ℕ} (labels : PartialLabels C depth)
+    (value : C) :
+    value ∈ knownLabelsList labels ↔
+      ∃ layer : Fin (depth + 1), ∃ pos : Fin (2 ^ layer.1),
+        (labels layer).get pos = some value := by
+  simp [knownLabelsList, mem_knownLabelsAtLayer_iff]
+
+theorem mem_knownLabels_iff {depth : ℕ} [DecidableEq C]
+    (labels : PartialLabels C depth) (value : C) :
+    value ∈ knownLabels labels ↔
+      ∃ layer : Fin (depth + 1), ∃ pos : Fin (2 ^ layer.1),
+        (labels layer).get pos = some value := by
+  simp [knownLabels, mem_knownLabelsList_iff]
+
+theorem mem_traceKnownLabels_iff {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) (value : C) :
+    value ∈ traceKnownLabels (M := M) (S := S) (C := C)
+        (depth := depth) commitment trace ↔
+      ∃ layer : Fin (depth + 1), ∃ pos : Fin (2 ^ layer.1),
+        (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment trace layer).get pos = some value := by
+  simp [traceKnownLabels, mem_knownLabels_iff]
+
+theorem mem_traceKnownLabels_of_get_eq_some {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C))
+    (layer : Fin (depth + 1)) (pos : Fin (2 ^ layer.1)) (value : C)
+    (hget :
+      (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment trace layer).get pos = some value) :
+    value ∈ traceKnownLabels (M := M) (S := S) (C := C)
+      (depth := depth) commitment trace := by
+  exact (mem_traceKnownLabels_iff (M := M) (S := S) (C := C)
+    (depth := depth) commitment trace value).mpr ⟨layer, pos, hget⟩
+
+theorem mem_internalInputLabels_left_of_mem {trace : QueryLog (Oracle M S C)}
+    {left right answer : C}
+    (hmem : ⟨Sum.inr (left, right), answer⟩ ∈ trace) :
+    left ∈ internalInputLabels (M := M) (S := S) (C := C) trace := by
+  induction trace with
+  | nil =>
+      cases hmem
+  | cons entry rest ih =>
+      rcases List.mem_cons.mp hmem with hhead | htail
+      · subst entry
+        simp [internalInputLabels]
+      · cases entry with
+        | mk domain queryAnswer =>
+            cases domain with
+            | inl ms =>
+                simpa [internalInputLabels] using ih htail
+            | inr pair =>
+                rcases pair with ⟨queryLeft, queryRight⟩
+                simpa [internalInputLabels] using (Or.inr (Or.inr (ih htail)))
+
+theorem mem_internalInputLabels_right_of_mem {trace : QueryLog (Oracle M S C)}
+    {left right answer : C}
+    (hmem : ⟨Sum.inr (left, right), answer⟩ ∈ trace) :
+    right ∈ internalInputLabels (M := M) (S := S) (C := C) trace := by
+  induction trace with
+  | nil =>
+      cases hmem
+  | cons entry rest ih =>
+      rcases List.mem_cons.mp hmem with hhead | htail
+      · subst entry
+        simp [internalInputLabels]
+      · cases entry with
+        | mk domain queryAnswer =>
+            cases domain with
+            | inl ms =>
+                simpa [internalInputLabels] using ih htail
+            | inr pair =>
+                rcases pair with ⟨queryLeft, queryRight⟩
+                simpa [internalInputLabels] using (Or.inr (Or.inr (ih htail)))
+
+private theorem leftChildPos_parentPos_self_of_even {layer : ℕ}
+    (pos : Fin (2 ^ (layer + 1))) (hpos : pos.1 % 2 = 0) :
+    leftChildPos (parentPos pos) = pos := by
+  apply Fin.ext
+  simp [leftChildPos, parentPos]
+  omega
+
+private theorem rightChildPos_parentPos_self_of_odd {layer : ℕ}
+    (pos : Fin (2 ^ (layer + 1))) (hpos : pos.1 % 2 = 1) :
+    rightChildPos (parentPos pos) = pos := by
+  apply Fin.ext
+  simp [rightChildPos, parentPos]
+  omega
+
+/-- Every known label in the closed partial tree is in the compact candidate
+list consisting of the commitment and internal-query input labels from the
+trace. -/
+theorem mem_traceLabelCandidates_of_get_eq_some {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C))
+    (layer : Fin (depth + 1)) (pos : Fin (2 ^ layer.1)) (value : C)
+    (hget :
+      (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment trace layer).get pos = some value) :
+    value ∈ traceLabelCandidates (M := M) (S := S) (C := C) commitment trace := by
+  rcases layer with ⟨(_ | layer), hlayer⟩
+  · have hroot :
+        (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment trace ⟨0, hlayer⟩).get pos =
+        some commitment := by
+        have hpos : pos = 0 := by
+          apply Fin.ext
+          have hpow : 2 ^ (⟨0, hlayer⟩ : Fin (depth + 1)).1 = 1 := by
+            simp
+          have hlt : pos.1 < 1 := by
+            simpa [hpow] using pos.2
+          omega
+        subst hpos
+        simpa [Vector.head] using
+          buildPartialTreeFromTrace_root (M := M) (S := S) (C := C)
+            (depth := depth) commitment trace
+    have hvalue : value = commitment := Option.some.inj (by rw [← hget, hroot])
+    simp [traceLabelCandidates, hvalue]
+  · have hclose :
+        (closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+          trace (depth + 1) (seedRoot (C := C) (depth := depth) commitment)
+          ⟨layer + 1, hlayer⟩).get pos = some value := by
+        simpa [buildPartialTreeFromTrace] using hget
+    by_cases hparity : pos.1 % 2 = 0
+    · let parent : Fin (2 ^ layer) := parentPos pos
+      have hpos : leftChildPos parent = pos :=
+        leftChildPos_parentPos_self_of_even (layer := layer) pos hparity
+      have hleft :
+          (closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+            trace (depth + 1) (seedRoot (C := C) (depth := depth) commitment)
+            ⟨layer + 1, hlayer⟩).get (leftChildPos parent) = some value := by
+        simpa [hpos] using hclose
+      have horigin :=
+        closeInternalQueries_leftChild_origin (M := M) (S := S) (C := C)
+          (depth := depth) (layer := layer) trace (depth + 1)
+          (seedRoot (C := C) (depth := depth) commitment) hlayer parent value hleft
+      cases horigin with
+      | inl hseed =>
+          simp [seedRoot] at hseed
+      | inr hnew =>
+          rcases hnew with ⟨right, answer, hmem, _⟩
+          exact List.mem_cons_of_mem _
+            (mem_internalInputLabels_left_of_mem (M := M) (S := S) (C := C) hmem)
+    · have hodd : pos.1 % 2 = 1 := by
+        have hlt := Nat.mod_lt pos.1 (by decide : 0 < 2)
+        omega
+      let parent : Fin (2 ^ layer) := parentPos pos
+      have hpos : rightChildPos parent = pos :=
+        rightChildPos_parentPos_self_of_odd (layer := layer) pos hodd
+      have hright :
+          (closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+            trace (depth + 1) (seedRoot (C := C) (depth := depth) commitment)
+            ⟨layer + 1, hlayer⟩).get (rightChildPos parent) = some value := by
+        simpa [hpos] using hclose
+      have horigin :=
+        closeInternalQueries_rightChild_origin (M := M) (S := S) (C := C)
+          (depth := depth) (layer := layer) trace (depth + 1)
+          (seedRoot (C := C) (depth := depth) commitment) hlayer parent value hright
+      cases horigin with
+      | inl hseed =>
+          simp [seedRoot] at hseed
+      | inr hnew =>
+          rcases hnew with ⟨left, answer, hmem, _⟩
+          exact List.mem_cons_of_mem _
+            (mem_internalInputLabels_right_of_mem (M := M) (S := S) (C := C) hmem)
+
+theorem traceKnownLabels_subset_candidates {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) :
+    traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace ⊆
+      (traceLabelCandidates (M := M) (S := S) (C := C) commitment trace).toFinset := by
+  intro value hvalue
+  rcases (mem_traceKnownLabels_iff (M := M) (S := S) (C := C)
+      (depth := depth) commitment trace value).mp hvalue with
+    ⟨layer, pos, hget⟩
+  exact (List.mem_toFinset).mpr
+    (mem_traceLabelCandidates_of_get_eq_some (M := M) (S := S) (C := C)
+      (depth := depth) commitment trace layer pos value hget)
+
+private theorem internalInputLabels_length_le (trace : QueryLog (Oracle M S C)) :
+    (internalInputLabels (M := M) (S := S) (C := C) trace).length ≤ 2 * trace.length := by
+  induction trace with
+  | nil =>
+      simp [internalInputLabels]
+  | cons entry rest ih =>
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              simp [internalInputLabels]
+              omega
+          | inr pair =>
+              rcases pair with ⟨left, right⟩
+              simp [internalInputLabels]
+              omega
+
+theorem traceLabelCandidates_length_le (commitment : C)
+    (trace : QueryLog (Oracle M S C)) :
+    (traceLabelCandidates (M := M) (S := S) (C := C) commitment trace).length ≤
+      2 * trace.length + 1 := by
+  simp [traceLabelCandidates]
+  exact internalInputLabels_length_le (M := M) (S := S) (C := C) trace
+
+theorem traceKnownLabels_card_le_trace_length {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) :
+    (traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace).card ≤
+      2 * trace.length + 1 := by
+  calc
+    (traceKnownLabels (M := M) (S := S) (C := C)
+        (depth := depth) commitment trace).card
+        ≤ ((traceLabelCandidates (M := M) (S := S) (C := C)
+          commitment trace).toFinset).card :=
+          Finset.card_le_card
+            (traceKnownLabels_subset_candidates (M := M) (S := S) (C := C)
+              (depth := depth) commitment trace)
+    _ ≤ (traceLabelCandidates (M := M) (S := S) (C := C)
+          commitment trace).length :=
+          List.toFinset_card_le _
+    _ ≤ 2 * trace.length + 1 :=
+          traceLabelCandidates_length_le (M := M) (S := S) (C := C) commitment trace
+
+private theorem knownLabelsAtLayer_length_le {depth : ℕ} (labels : PartialLabels C depth)
+    (layer : Fin (depth + 1)) :
+    (knownLabelsAtLayer labels layer).length ≤ 2 ^ layer.1 := by
+  rw [knownLabelsAtLayer, List.filterMap_eq_flatMap_toList]
+  rw [List.length_flatMap]
+  calc
+    ((labels layer).toList.map fun value => (id value).toList.length).sum
+        ≤ ((labels layer).toList.map fun _ => 1).sum := by
+          apply List.sum_le_sum
+          intro value _
+          cases value <;> simp
+    _ = (labels layer).toList.length := by
+          simp
+    _ = 2 ^ layer.1 := by
+          simp
+
+private theorem list_sum_map_two_mul (xs : List ℕ) :
+    (xs.map fun x => 2 * x).sum = 2 * xs.sum := by
+  induction xs with
+  | nil =>
+      simp
+  | cons x xs ih =>
+      simp [ih, Nat.mul_add]
+
+private theorem finRange_pow_two_sum_add_one_le : ∀ n : ℕ,
+    ((List.finRange n).map fun i => 2 ^ i.1).sum + 1 ≤ 2 ^ n
+  | 0 => by
+      simp
+  | n + 1 => by
+      have ih := finRange_pow_two_sum_add_one_le n
+      rw [List.finRange_succ]
+      simp only [List.map_cons, List.sum_cons, Fin.val_zero, pow_zero, List.map_map]
+      change 1 + (List.map (fun x : Fin n => 2 ^ (x.1 + 1)) (List.finRange n)).sum + 1 ≤
+        2 ^ (n + 1)
+      rw [show (List.map (fun x : Fin n => 2 ^ (x.1 + 1)) (List.finRange n)) =
+          (List.map (fun x : Fin n => 2 * 2 ^ x.1) (List.finRange n)) by
+        apply List.map_congr_left
+        intro x _
+        rw [pow_succ]
+        omega]
+      rw [show (List.map (fun x : Fin n => 2 * 2 ^ x.1) (List.finRange n)) =
+          (List.map (fun y : ℕ => 2 * y) ((List.finRange n).map fun x => 2 ^ x.1)) by
+        rw [List.map_map]
+        rfl]
+      rw [list_sum_map_two_mul]
+      rw [pow_succ]
+      omega
+
+private theorem knownLabelsList_length_le {depth : ℕ} (labels : PartialLabels C depth) :
+    (knownLabelsList labels).length ≤ 2 ^ (depth + 1) := by
+  rw [knownLabelsList, List.length_flatMap]
+  calc
+    ((List.finRange (depth + 1)).map fun layer =>
+        (knownLabelsAtLayer labels layer).length).sum
+        ≤ ((List.finRange (depth + 1)).map fun layer => 2 ^ layer.1).sum := by
+          apply List.sum_le_sum
+          intro layer _
+          exact knownLabelsAtLayer_length_le labels layer
+    _ ≤ 2 ^ (depth + 1) := by
+          have h := finRange_pow_two_sum_add_one_le (depth + 1)
+          omega
+
+theorem traceKnownLabels_card_le_tree_size {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) :
+    (traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace).card ≤
+      2 ^ (depth + 1) := by
+  calc
+    (traceKnownLabels (M := M) (S := S) (C := C)
+        (depth := depth) commitment trace).card
+        ≤ (knownLabelsList (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment trace)).length :=
+          List.toFinset_card_le _
+    _ ≤ 2 ^ (depth + 1) :=
+          knownLabelsList_length_le
+            (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+              (depth := depth) commitment trace)
+
+theorem traceKnownLabels_card_le_min {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) :
+    (traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace).card ≤
+      min (2 * trace.length + 1) (2 ^ (depth + 1)) := by
+  exact le_min
+    (traceKnownLabels_card_le_trace_length (M := M) (S := S) (C := C)
+      (depth := depth) commitment trace)
+    (traceKnownLabels_card_le_tree_size (M := M) (S := S) (C := C)
+      (depth := depth) commitment trace)
+
+theorem knownLabels_after_passes_subset_traceKnownLabels {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) (passes : ℕ)
+    (hpasses : passes ≤ depth + 1) :
+    knownLabels (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
+      (depth := depth) commitment trace passes) ⊆
+      traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace := by
+  intro value hvalue
+  rcases (mem_knownLabels_iff (C := C)
+      (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
+        (depth := depth) commitment trace passes) value).mp hvalue with
+    ⟨layer, pos, hget⟩
+  exact mem_traceKnownLabels_of_get_eq_some (M := M) (S := S) (C := C)
+    (depth := depth) commitment trace layer pos value
+    (buildPartialTreeFromTrace_get_eq_of_after_passes
+      (M := M) (S := S) (C := C) (depth := depth)
+      commitment trace passes layer pos value hpasses hget)
+
+private theorem partitionTrace_foldr_internalQueries
+    (trace : QueryLog (Oracle M S C)) (acc : TracePartition M S C) :
+    (trace.foldr
+      (fun entry acc =>
+        match entry.1 with
+        | Sum.inl _ => { acc with leafQueries := entry :: acc.leafQueries }
+        | Sum.inr _ => { acc with internalQueries := entry :: acc.internalQueries })
+      acc).internalQueries =
+      (partitionTrace (M := M) (S := S) (C := C) trace).internalQueries ++
+        acc.internalQueries := by
+  induction trace with
+  | nil =>
+      simp [partitionTrace]
+  | cons entry rest ih =>
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              simpa [partitionTrace, ih]
+          | inr pair =>
+              simpa [partitionTrace, ih]
+
+theorem partitionTrace_internalQueries_append
+    (left right : QueryLog (Oracle M S C)) :
+    (partitionTrace (M := M) (S := S) (C := C) (left ++ right)).internalQueries =
+      (partitionTrace (M := M) (S := S) (C := C) left).internalQueries ++
+        (partitionTrace (M := M) (S := S) (C := C) right).internalQueries := by
+  unfold partitionTrace
+  rw [List.foldr_append]
+  exact partitionTrace_foldr_internalQueries (M := M) (S := S) (C := C) left
+    (partitionTrace (M := M) (S := S) (C := C) right)
+
+private theorem propagateInternalQueryAtLayer_eq_self_of_answer_not_parent
+    {layer : ℕ} [DecidableEq C] (left right answer : C)
+    (oldChildren : Vector (Option C) (2 ^ (layer + 1)))
+    (parents : Vector (Option C) (2 ^ layer))
+    (hanswer : ∀ parent : Fin (2 ^ layer), parents.get parent ≠ some answer) :
+    propagateInternalQueryAtLayer left right answer oldChildren parents = oldChildren := by
+  apply Vector.ext
+  intro i hi
+  let pos : Fin (2 ^ (layer + 1)) := ⟨i, hi⟩
+  change (propagateInternalQueryAtLayer left right answer oldChildren parents).get pos =
+    oldChildren.get pos
+  simp [propagateInternalQueryAtLayer]
+  cases hchild : oldChildren.get pos with
+  | some value =>
+      simp [hchild]
+  | none =>
+      cases hparent : parents.get (parentPos pos) with
+      | none =>
+          simp [hchild, hparent]
+      | some parentValue =>
+          have hne : parentValue ≠ answer := by
+            intro heq
+            exact hanswer (parentPos pos) (by simp [hparent, heq])
+          simp [hchild, hparent, hne]
+
+private theorem propagateInternalQueryUsingBase_eq_self_of_answer_not_known
+    {depth : ℕ} [DecidableEq C] (left right answer : C)
+    (baseLabels currentLabels : PartialLabels C depth)
+    (hanswer : answer ∉ knownLabels baseLabels) :
+    propagateInternalQueryUsingBase (depth := depth) left right answer
+      baseLabels currentLabels = currentLabels := by
+  funext layer
+  rcases layer with ⟨(_ | layer), hlayer⟩
+  · simp [propagateInternalQueryUsingBase]
+  · apply propagateInternalQueryAtLayer_eq_self_of_answer_not_parent
+    intro parent hparent
+    exact hanswer ((mem_knownLabels_iff (C := C) baseLabels answer).mpr
+      ⟨⟨layer, Nat.lt_of_succ_lt hlayer⟩, parent, hparent⟩)
+
+private theorem propagateInternalQueriesFold_eq_self_of_answers_not_known
+    {depth : ℕ} [DecidableEq C] :
+    ∀ (entries : QueryLog (Oracle M S C))
+      (baseLabels currentLabels : PartialLabels C depth),
+      (∀ left right answer,
+        ⟨Sum.inr (left, right), answer⟩ ∈ entries →
+          answer ∉ knownLabels baseLabels) →
+        entries.foldl
+          (fun current entry =>
+            match entry with
+            | ⟨Sum.inr (left, right), answer⟩ =>
+                propagateInternalQueryUsingBase (depth := depth)
+                  left right answer baseLabels current
+            | ⟨Sum.inl _, _⟩ => current)
+          currentLabels = currentLabels
+  | [], _, currentLabels, _ => by
+      rfl
+  | entry :: entries, baseLabels, currentLabels, hanswers => by
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              exact propagateInternalQueriesFold_eq_self_of_answers_not_known
+                (depth := depth)
+                entries baseLabels currentLabels
+                (fun left right queryAnswer hmem =>
+                  hanswers left right queryAnswer (List.mem_cons_of_mem _ hmem))
+          | inr pair =>
+              rcases pair with ⟨left, right⟩
+              rw [List.foldl_cons]
+              simp only
+              rw [propagateInternalQueryUsingBase_eq_self_of_answer_not_known
+                (depth := depth) left right answer baseLabels currentLabels
+                (hanswers left right answer (by simp))]
+              exact propagateInternalQueriesFold_eq_self_of_answers_not_known
+                (depth := depth)
+                entries baseLabels currentLabels
+                (fun left' right' queryAnswer hmem =>
+                  hanswers left' right' queryAnswer (List.mem_cons_of_mem _ hmem))
+
+private theorem propagateInternalQueryUsingBase_eq_self_of_mem_fold
+    {depth : ℕ} [DecidableEq C]
+    (entries : QueryLog (Oracle M S C)) (left right answer : C)
+    (baseLabels currentLabels : PartialLabels C depth)
+    (hmem : ⟨Sum.inr (left, right), answer⟩ ∈ entries) :
+    propagateInternalQueryUsingBase (depth := depth) left right answer baseLabels
+        (entries.foldl
+          (fun current entry =>
+            match entry with
+            | ⟨Sum.inr (left, right), answer⟩ =>
+                propagateInternalQueryUsingBase (depth := depth)
+                  left right answer baseLabels current
+            | ⟨Sum.inl _, _⟩ => current)
+          currentLabels) =
+      entries.foldl
+        (fun current entry =>
+          match entry with
+          | ⟨Sum.inr (left, right), answer⟩ =>
+              propagateInternalQueryUsingBase (depth := depth)
+                left right answer baseLabels current
+          | ⟨Sum.inl _, _⟩ => current)
+        currentLabels := by
+  funext layer
+  rcases layer with ⟨(_ | layer), hlayer⟩
+  · simp [propagateInternalQueryUsingBase]
+  · apply Vector.ext
+    intro i hi
+    let pos : Fin (2 ^ (layer + 1)) := ⟨i, hi⟩
+    let folded : PartialLabels C depth :=
+      entries.foldl
+        (fun current entry =>
+          match entry with
+          | ⟨Sum.inr (left, right), answer⟩ =>
+              propagateInternalQueryUsingBase (depth := depth)
+                left right answer baseLabels current
+          | ⟨Sum.inl _, _⟩ => current)
+        currentLabels
+    change
+      (propagateInternalQueryAtLayer left right answer
+          (folded ⟨layer + 1, hlayer⟩)
+          (baseLabels ⟨layer, Nat.lt_of_succ_lt hlayer⟩)).get pos =
+        (folded ⟨layer + 1, hlayer⟩).get pos
+    cases hchild : (folded ⟨layer + 1, hlayer⟩).get pos with
+    | some value =>
+        simp [propagateInternalQueryAtLayer, hchild]
+    | none =>
+        cases hparent :
+            (baseLabels ⟨layer, Nat.lt_of_succ_lt hlayer⟩).get (parentPos pos) with
+        | none =>
+            simp [propagateInternalQueryAtLayer, hchild, hparent]
+        | some parentValue =>
+            by_cases hanswer : parentValue = answer
+            · have hparentAnswer :
+                  (baseLabels ⟨layer, Nat.lt_of_succ_lt hlayer⟩).get
+                    (parentPos pos) = some answer := by
+                simpa [hanswer] using hparent
+              by_cases hparity : pos.1 % 2 = 0
+              · have hpos : leftChildPos (parentPos pos) = pos :=
+                  leftChildPos_parentPos_self_of_even (layer := layer) pos hparity
+                rcases propagateInternalQueriesFold_leftChild_exists_of_mem
+                    (M := M) (S := S) (C := C) (depth := depth) (layer := layer)
+                    entries baseLabels currentLabels hlayer (parentPos pos)
+                    left right answer hparentAnswer hmem with
+                  ⟨value, hvalue⟩
+                have hvaluePos :
+                    (folded ⟨layer + 1, hlayer⟩).get pos = some value := by
+                  simpa [folded, hpos] using hvalue
+                rw [hchild] at hvaluePos
+                cases hvaluePos
+              · have hodd : pos.1 % 2 = 1 := by
+                  have hlt := Nat.mod_lt pos.1 (by decide : 0 < 2)
+                  omega
+                have hpos : rightChildPos (parentPos pos) = pos :=
+                  rightChildPos_parentPos_self_of_odd (layer := layer) pos hodd
+                rcases propagateInternalQueriesFold_rightChild_exists_of_mem
+                    (M := M) (S := S) (C := C) (depth := depth) (layer := layer)
+                    entries baseLabels currentLabels hlayer (parentPos pos)
+                    left right answer hparentAnswer hmem with
+                  ⟨value, hvalue⟩
+                have hvaluePos :
+                    (folded ⟨layer + 1, hlayer⟩).get pos = some value := by
+                  simpa [folded, hpos] using hvalue
+                rw [hchild] at hvaluePos
+                cases hvaluePos
+            · simp [propagateInternalQueryAtLayer, hchild, hparent, hanswer]
+
+private theorem propagateInternalQueriesFold_eq_self_of_mem_or_answers_not_known
+    {depth : ℕ} [DecidableEq C] :
+    ∀ (leftEntries rightEntries : QueryLog (Oracle M S C))
+      (baseLabels currentLabels : PartialLabels C depth),
+      (∀ queryLeft queryRight answer,
+        ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ rightEntries →
+          ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ leftEntries ∨
+            answer ∉ knownLabels baseLabels) →
+        rightEntries.foldl
+          (fun current entry =>
+            match entry with
+            | ⟨Sum.inr (left, right), answer⟩ =>
+                propagateInternalQueryUsingBase (depth := depth)
+                  left right answer baseLabels current
+            | ⟨Sum.inl _, _⟩ => current)
+          (leftEntries.foldl
+            (fun current entry =>
+              match entry with
+              | ⟨Sum.inr (left, right), answer⟩ =>
+                  propagateInternalQueryUsingBase (depth := depth)
+                    left right answer baseLabels current
+              | ⟨Sum.inl _, _⟩ => current)
+            currentLabels) =
+          leftEntries.foldl
+            (fun current entry =>
+              match entry with
+              | ⟨Sum.inr (left, right), answer⟩ =>
+                  propagateInternalQueryUsingBase (depth := depth)
+                    left right answer baseLabels current
+              | ⟨Sum.inl _, _⟩ => current)
+            currentLabels
+  | _, [], _, _, _ => by
+      rfl
+  | leftEntries, entry :: entries, baseLabels, currentLabels, hanswers => by
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              exact propagateInternalQueriesFold_eq_self_of_mem_or_answers_not_known
+                (depth := depth)
+                leftEntries entries baseLabels currentLabels
+                (fun queryLeft queryRight queryAnswer hmem =>
+                  hanswers queryLeft queryRight queryAnswer (List.mem_cons_of_mem _ hmem))
+          | inr pair =>
+              rcases pair with ⟨queryLeft, queryRight⟩
+              rw [List.foldl_cons]
+              simp only
+              cases hanswers queryLeft queryRight answer (by simp) with
+              | inl hmemLeft =>
+                  rw [propagateInternalQueryUsingBase_eq_self_of_mem_fold
+                    (M := M) (S := S) (C := C) (depth := depth)
+                    leftEntries queryLeft queryRight answer baseLabels currentLabels hmemLeft]
+                  exact propagateInternalQueriesFold_eq_self_of_mem_or_answers_not_known
+                    (depth := depth)
+                    leftEntries entries baseLabels currentLabels
+                    (fun queryLeft' queryRight' queryAnswer hmem =>
+                      hanswers queryLeft' queryRight' queryAnswer
+                        (List.mem_cons_of_mem _ hmem))
+              | inr hnotKnown =>
+                  rw [propagateInternalQueryUsingBase_eq_self_of_answer_not_known
+                    (depth := depth)
+                    queryLeft queryRight answer baseLabels
+                    (leftEntries.foldl
+                      (fun current entry =>
+                        match entry with
+                        | ⟨Sum.inr (left, right), answer⟩ =>
+                            propagateInternalQueryUsingBase (depth := depth)
+                              left right answer baseLabels current
+                        | ⟨Sum.inl _, _⟩ => current)
+                      currentLabels)
+                    hnotKnown]
+                  exact propagateInternalQueriesFold_eq_self_of_mem_or_answers_not_known
+                    (depth := depth)
+                    leftEntries entries baseLabels currentLabels
+                    (fun queryLeft' queryRight' queryAnswer hmem =>
+                      hanswers queryLeft' queryRight' queryAnswer
+                        (List.mem_cons_of_mem _ hmem))
+
+private theorem propagateInternalQueriesOnce_append_eq_left_of_answers_not_known
+    {depth : ℕ} [DecidableEq C]
+    (left right : QueryLog (Oracle M S C)) (labels : PartialLabels C depth)
+    (hanswers : ∀ queryLeft queryRight answer,
+      ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ right →
+        answer ∉ knownLabels labels) :
+    propagateInternalQueriesOnce (M := M) (S := S) (C := C) (depth := depth)
+      (left ++ right) labels =
+      propagateInternalQueriesOnce (M := M) (S := S) (C := C) (depth := depth)
+        left labels := by
+  unfold propagateInternalQueriesOnce
+  rw [partitionTrace_internalQueries_append (M := M) (S := S) (C := C) left right]
+  rw [List.foldl_append]
+  exact propagateInternalQueriesFold_eq_self_of_answers_not_known
+    (depth := depth)
+    (partitionTrace (M := M) (S := S) (C := C) right).internalQueries labels
+    (((partitionTrace (M := M) (S := S) (C := C) left).internalQueries).foldl
+      (fun current entry =>
+        match entry with
+        | ⟨Sum.inr (left, right), answer⟩ =>
+            propagateInternalQueryUsingBase (depth := depth)
+              left right answer labels current
+        | ⟨Sum.inl _, _⟩ => current)
+      labels)
+    (fun queryLeft queryRight answer hmem =>
+      hanswers queryLeft queryRight answer
+        ((mem_partitionTrace_internalQueries_iff (M := M) (S := S) (C := C)
+          right ⟨Sum.inr (queryLeft, queryRight), answer⟩).mp hmem).1)
+
+private theorem propagateInternalQueriesOnce_append_eq_left_of_mem_or_answers_not_known
+    {depth : ℕ} [DecidableEq C]
+    (left right : QueryLog (Oracle M S C)) (labels : PartialLabels C depth)
+    (hanswers : ∀ queryLeft queryRight answer,
+      ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ right →
+        ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ left ∨
+          answer ∉ knownLabels labels) :
+    propagateInternalQueriesOnce (M := M) (S := S) (C := C) (depth := depth)
+      (left ++ right) labels =
+      propagateInternalQueriesOnce (M := M) (S := S) (C := C) (depth := depth)
+        left labels := by
+  unfold propagateInternalQueriesOnce
+  rw [partitionTrace_internalQueries_append (M := M) (S := S) (C := C) left right]
+  rw [List.foldl_append]
+  exact propagateInternalQueriesFold_eq_self_of_mem_or_answers_not_known
+    (M := M) (S := S) (C := C) (depth := depth)
+    (partitionTrace (M := M) (S := S) (C := C) left).internalQueries
+    (partitionTrace (M := M) (S := S) (C := C) right).internalQueries labels labels
+    (fun queryLeft queryRight answer hmem =>
+      Or.imp
+        (fun hmemLeft =>
+          (mem_partitionTrace_internalQueries_iff (M := M) (S := S) (C := C)
+            left ⟨Sum.inr (queryLeft, queryRight), answer⟩).mpr
+            ⟨hmemLeft, ⟨(queryLeft, queryRight), rfl⟩⟩)
+        id
+        (hanswers queryLeft queryRight answer
+          ((mem_partitionTrace_internalQueries_iff (M := M) (S := S) (C := C)
+            right ⟨Sum.inr (queryLeft, queryRight), answer⟩).mp hmem).1))
+
+private theorem closeInternalQueries_append_eq_left_of_answers_not_final
+    {depth : ℕ} [DecidableEq C]
+    (commitment : C) (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hanswers : ∀ queryLeft queryRight answer,
+      ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ openTrace →
+        answer ∉ traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace) :
+    ∀ n : ℕ, n ≤ depth + 1 →
+      closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+          (commitTrace ++ openTrace) n (seedRoot (C := C) (depth := depth) commitment) =
+        closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+          commitTrace n (seedRoot (C := C) (depth := depth) commitment)
+  | 0, _ => by
+      rfl
+  | n + 1, hn => by
+      rw [closeInternalQueries_succ_eq_propagateInternalQueriesOnce_close
+        (M := M) (S := S) (C := C) (depth := depth)
+        (commitTrace ++ openTrace) n]
+      rw [closeInternalQueries_succ_eq_propagateInternalQueriesOnce_close
+        (M := M) (S := S) (C := C) (depth := depth) commitTrace n]
+      rw [closeInternalQueries_append_eq_left_of_answers_not_final
+        (depth := depth)
+        commitment commitTrace openTrace hanswers n (by omega)]
+      apply propagateInternalQueriesOnce_append_eq_left_of_answers_not_known
+      intro queryLeft queryRight answer hmem hknown
+      have hsubset :=
+        knownLabels_after_passes_subset_traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace n (by omega)
+      exact hanswers queryLeft queryRight answer hmem (hsubset (by
+        simpa [buildPartialTreeFromTraceAfterPasses] using hknown))
+
+theorem buildPartialTreeFromTrace_append_eq_left_of_answers_not_mem
+    {depth : ℕ} [DecidableEq C]
+    (commitment : C) (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hanswers : ∀ queryLeft queryRight answer,
+      ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ openTrace →
+        answer ∉ traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace) :
+    buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment (commitTrace ++ openTrace) =
+      buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment commitTrace := by
+  simpa [buildPartialTreeFromTrace] using
+    closeInternalQueries_append_eq_left_of_answers_not_final
+      (M := M) (S := S) (C := C) (depth := depth)
+      commitment commitTrace openTrace hanswers (depth + 1) (by rfl)
+
+private theorem closeInternalQueries_append_eq_left_of_mem_or_answers_not_final
+    {depth : ℕ} [DecidableEq C]
+    (commitment : C) (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hanswers : ∀ queryLeft queryRight answer,
+      ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ openTrace →
+        ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ commitTrace ∨
+          answer ∉ traceKnownLabels (M := M) (S := S) (C := C)
+            (depth := depth) commitment commitTrace) :
+    ∀ n : ℕ, n ≤ depth + 1 →
+      closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+          (commitTrace ++ openTrace) n (seedRoot (C := C) (depth := depth) commitment) =
+        closeInternalQueries (M := M) (S := S) (C := C) (depth := depth)
+          commitTrace n (seedRoot (C := C) (depth := depth) commitment)
+  | 0, _ => by
+      rfl
+  | n + 1, hn => by
+      rw [closeInternalQueries_succ_eq_propagateInternalQueriesOnce_close
+        (M := M) (S := S) (C := C) (depth := depth)
+        (commitTrace ++ openTrace) n]
+      rw [closeInternalQueries_succ_eq_propagateInternalQueriesOnce_close
+        (M := M) (S := S) (C := C) (depth := depth) commitTrace n]
+      rw [closeInternalQueries_append_eq_left_of_mem_or_answers_not_final
+        (depth := depth)
+        commitment commitTrace openTrace hanswers n (by omega)]
+      apply propagateInternalQueriesOnce_append_eq_left_of_mem_or_answers_not_known
+      intro queryLeft queryRight answer hmem
+      cases hanswers queryLeft queryRight answer hmem with
+      | inl hmemCommit =>
+          exact Or.inl hmemCommit
+      | inr hnotKnown =>
+          right
+          intro hknown
+          have hsubset :=
+            knownLabels_after_passes_subset_traceKnownLabels (M := M) (S := S) (C := C)
+              (depth := depth) commitment commitTrace n (by omega)
+          exact hnotKnown (hsubset (by
+            simpa [buildPartialTreeFromTraceAfterPasses] using hknown))
+
+private theorem buildPartialTreeFromTrace_append_eq_left_of_mem_or_answers_not_mem
+    {depth : ℕ} [DecidableEq C]
+    (commitment : C) (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hanswers : ∀ queryLeft queryRight answer,
+      ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ openTrace →
+        ⟨Sum.inr (queryLeft, queryRight), answer⟩ ∈ commitTrace ∨
+          answer ∉ traceKnownLabels (M := M) (S := S) (C := C)
+            (depth := depth) commitment commitTrace) :
+    buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment (commitTrace ++ openTrace) =
+      buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment commitTrace := by
+  simpa [buildPartialTreeFromTrace] using
+    closeInternalQueries_append_eq_left_of_mem_or_answers_not_final
+      (M := M) (S := S) (C := C) (depth := depth)
+      commitment commitTrace openTrace hanswers (depth + 1) (by rfl)
+
 private def populateLeafQuery {depth : ℕ} [DecidableEq C] (message : M) (salt : S) (answer : C)
     (labels : PartialLabels C depth) (leaves : PartialLeaves M S depth) :
     PartialLeaves M S depth :=
@@ -2116,6 +2935,486 @@ theorem populateLeavesFromTrace_get_eq_some_of_unique_leaf {depth : ℕ} [Decida
       ((partitionTrace (M := M) (S := S) (C := C) trace).leafQueries)
       (emptyPartialLeaves (M := M) (S := S) (depth := depth))
       idx message salt answer (Or.inl hempty) hlabel hmemLeaf huniqueLeaf
+
+private theorem partitionTrace_foldr_leafQueries
+    (trace : QueryLog (Oracle M S C)) (acc : TracePartition M S C) :
+    (trace.foldr
+      (fun entry acc =>
+        match entry.1 with
+        | Sum.inl _ => { acc with leafQueries := entry :: acc.leafQueries }
+        | Sum.inr _ => { acc with internalQueries := entry :: acc.internalQueries })
+      acc).leafQueries =
+      (partitionTrace (M := M) (S := S) (C := C) trace).leafQueries ++
+        acc.leafQueries := by
+  induction trace with
+  | nil =>
+      simp [partitionTrace]
+  | cons entry rest ih =>
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              simpa [partitionTrace, ih]
+          | inr pair =>
+              simpa [partitionTrace, ih]
+
+theorem partitionTrace_leafQueries_append
+    (left right : QueryLog (Oracle M S C)) :
+    (partitionTrace (M := M) (S := S) (C := C) (left ++ right)).leafQueries =
+      (partitionTrace (M := M) (S := S) (C := C) left).leafQueries ++
+        (partitionTrace (M := M) (S := S) (C := C) right).leafQueries := by
+  unfold partitionTrace
+  rw [List.foldr_append]
+  exact partitionTrace_foldr_leafQueries (M := M) (S := S) (C := C) left
+    (partitionTrace (M := M) (S := S) (C := C) right)
+
+private theorem populateLeafQuery_eq_self_of_answer_not_known {depth : ℕ}
+    [DecidableEq C] (message : M) (salt : S) (answer : C)
+    (labels : PartialLabels C depth) (leaves : PartialLeaves M S depth)
+    (hanswer : answer ∉ knownLabels labels) :
+    populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+      message salt answer labels leaves = leaves := by
+  apply Vector.ext
+  intro i hi
+  let idx : Index depth := ⟨i, hi⟩
+  change (populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+      message salt answer labels leaves).get idx = leaves.get idx
+  simp [populateLeafQuery]
+  cases hleaf : leaves.get idx with
+  | some value =>
+      simp [hleaf]
+  | none =>
+      cases hlabel : (labels ⟨depth, Nat.lt_succ_self _⟩).get idx with
+      | none =>
+          simp [hleaf, hlabel]
+      | some label =>
+          have hne : label ≠ answer := by
+            intro heq
+            exact hanswer ((mem_knownLabels_iff (C := C) labels answer).mpr
+              ⟨⟨depth, Nat.lt_succ_self _⟩, idx, by simpa [heq] using hlabel⟩)
+          simp [hleaf, hlabel, hne]
+
+private theorem populateLeavesFold_eq_self_of_answers_not_known {depth : ℕ}
+    [DecidableEq C] (labels : PartialLabels C depth) :
+    ∀ (entries : QueryLog (Oracle M S C)) (leaves : PartialLeaves M S depth),
+      (∀ message salt answer,
+        ⟨Sum.inl (message, salt), answer⟩ ∈ entries →
+          answer ∉ knownLabels labels) →
+        entries.foldl
+          (fun leaves entry =>
+            match entry with
+            | ⟨Sum.inl (message, salt), answer⟩ =>
+                populateLeafQuery (depth := depth) message salt answer labels leaves
+            | ⟨Sum.inr _, _⟩ => leaves)
+          leaves = leaves
+  | [], leaves, _ => by
+      rfl
+  | entry :: entries, leaves, hanswers => by
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              rcases ms with ⟨message, salt⟩
+              rw [List.foldl_cons]
+              simp only
+              rw [populateLeafQuery_eq_self_of_answer_not_known
+                (M := M) (S := S) (C := C) (depth := depth)
+                message salt answer labels leaves
+                (hanswers message salt answer (by simp))]
+              exact populateLeavesFold_eq_self_of_answers_not_known labels entries leaves
+                (fun message' salt' answer' hmem =>
+                  hanswers message' salt' answer' (List.mem_cons_of_mem _ hmem))
+          | inr cs =>
+              exact populateLeavesFold_eq_self_of_answers_not_known labels entries leaves
+                (fun message salt answer hmem =>
+                  hanswers message salt answer (List.mem_cons_of_mem _ hmem))
+
+private theorem populateLeavesFold_get_eq_some_of_mem {depth : ℕ} [DecidableEq C]
+    (labels : PartialLabels C depth) :
+    ∀ (entries : QueryLog (Oracle M S C)) (leaves : PartialLeaves M S depth)
+      (idx : Index depth) (message : M) (salt : S) (answer : C),
+      (labels ⟨depth, Nat.lt_succ_self _⟩).get idx = some answer →
+        ⟨Sum.inl (message, salt), answer⟩ ∈ entries →
+          ∃ value : M × S,
+            (entries.foldl
+                (fun leaves entry =>
+                  match entry with
+                  | ⟨Sum.inl (message, salt), answer⟩ =>
+                      populateLeafQuery (depth := depth)
+                        message salt answer labels leaves
+                  | ⟨Sum.inr _, _⟩ => leaves)
+                leaves).get idx = some value
+  | [], _, _, _, _, _, _, hmem => by
+      cases hmem
+  | entry :: entries, leaves, idx, message, salt, answer, hlabel, hmem => by
+      rcases List.mem_cons.mp hmem with hhead | htail
+      · subst entry
+        cases hleaf : leaves.get idx with
+        | some value =>
+            refine ⟨value, ?_⟩
+            exact populateLeavesFold_get_eq_of_some (M := M) (S := S) (C := C)
+              (depth := depth) labels entries
+              (populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+                message salt answer labels leaves)
+              idx value
+              (populateLeafQuery_get_eq_of_some (M := M) (S := S) (C := C)
+                (depth := depth) message salt answer labels leaves idx value hleaf)
+        | none =>
+            refine ⟨(message, salt), ?_⟩
+            exact populateLeavesFold_get_eq_of_some (M := M) (S := S) (C := C)
+              (depth := depth) labels entries
+              (populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+                message salt answer labels leaves)
+              idx (message, salt)
+              (populateLeafQuery_get_eq_some_of_none (M := M) (S := S) (C := C)
+                (depth := depth) message salt answer labels leaves idx hleaf hlabel)
+      · cases entry with
+        | mk domain queryAnswer =>
+            cases domain with
+            | inl ms =>
+                rcases ms with ⟨queryMessage, querySalt⟩
+                exact populateLeavesFold_get_eq_some_of_mem labels entries
+                  (populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+                    queryMessage querySalt queryAnswer labels leaves)
+                  idx message salt answer hlabel htail
+            | inr cs =>
+                exact populateLeavesFold_get_eq_some_of_mem labels entries leaves
+                  idx message salt answer hlabel htail
+
+private theorem populateLeafQuery_eq_self_of_mem_fold {depth : ℕ} [DecidableEq C]
+    (entries : QueryLog (Oracle M S C)) (message : M) (salt : S) (answer : C)
+    (labels : PartialLabels C depth) (leaves : PartialLeaves M S depth)
+    (hmem : ⟨Sum.inl (message, salt), answer⟩ ∈ entries) :
+    populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+        message salt answer labels
+        (entries.foldl
+          (fun leaves entry =>
+            match entry with
+            | ⟨Sum.inl (message, salt), answer⟩ =>
+                populateLeafQuery (depth := depth)
+                  message salt answer labels leaves
+            | ⟨Sum.inr _, _⟩ => leaves)
+          leaves) =
+      entries.foldl
+        (fun leaves entry =>
+          match entry with
+          | ⟨Sum.inl (message, salt), answer⟩ =>
+              populateLeafQuery (depth := depth)
+                message salt answer labels leaves
+          | ⟨Sum.inr _, _⟩ => leaves)
+        leaves := by
+  apply Vector.ext
+  intro i hi
+  let idx : Index depth := ⟨i, hi⟩
+  let folded : PartialLeaves M S depth :=
+    entries.foldl
+      (fun leaves entry =>
+        match entry with
+        | ⟨Sum.inl (message, salt), answer⟩ =>
+            populateLeafQuery (depth := depth)
+              message salt answer labels leaves
+        | ⟨Sum.inr _, _⟩ => leaves)
+      leaves
+  change
+    (populateLeafQuery (M := M) (S := S) (C := C) (depth := depth)
+      message salt answer labels folded).get idx = folded.get idx
+  cases hleaf : folded.get idx with
+  | some value =>
+      simp [populateLeafQuery, hleaf]
+  | none =>
+      cases hlabel : (labels ⟨depth, Nat.lt_succ_self _⟩).get idx with
+      | none =>
+          simp [populateLeafQuery, hleaf, hlabel]
+      | some label =>
+          by_cases hanswer : label = answer
+          · have hlabelAnswer :
+                (labels ⟨depth, Nat.lt_succ_self _⟩).get idx = some answer := by
+              simpa [hanswer] using hlabel
+            rcases populateLeavesFold_get_eq_some_of_mem
+                (M := M) (S := S) (C := C) (depth := depth)
+                labels entries leaves idx message salt answer hlabelAnswer hmem with
+              ⟨value, hvalue⟩
+            have hvalueFolded : folded.get idx = some value := by
+              simpa [folded] using hvalue
+            rw [hleaf] at hvalueFolded
+            cases hvalueFolded
+          · simp [populateLeafQuery, hleaf, hlabel, hanswer]
+
+private theorem populateLeavesFold_eq_self_of_mem_or_answers_not_known {depth : ℕ}
+    [DecidableEq C] (labels : PartialLabels C depth) :
+    ∀ (leftEntries rightEntries : QueryLog (Oracle M S C))
+      (leaves : PartialLeaves M S depth),
+      (∀ message salt answer,
+        ⟨Sum.inl (message, salt), answer⟩ ∈ rightEntries →
+          ⟨Sum.inl (message, salt), answer⟩ ∈ leftEntries ∨
+            answer ∉ knownLabels labels) →
+        rightEntries.foldl
+          (fun leaves entry =>
+            match entry with
+            | ⟨Sum.inl (message, salt), answer⟩ =>
+                populateLeafQuery (depth := depth)
+                  message salt answer labels leaves
+            | ⟨Sum.inr _, _⟩ => leaves)
+          (leftEntries.foldl
+            (fun leaves entry =>
+              match entry with
+              | ⟨Sum.inl (message, salt), answer⟩ =>
+                  populateLeafQuery (depth := depth)
+                    message salt answer labels leaves
+              | ⟨Sum.inr _, _⟩ => leaves)
+            leaves) =
+          leftEntries.foldl
+            (fun leaves entry =>
+              match entry with
+              | ⟨Sum.inl (message, salt), answer⟩ =>
+                  populateLeafQuery (depth := depth)
+                    message salt answer labels leaves
+              | ⟨Sum.inr _, _⟩ => leaves)
+            leaves
+  | _, [], _, _ => by
+      rfl
+  | leftEntries, entry :: entries, leaves, hanswers => by
+      cases entry with
+      | mk domain answer =>
+          cases domain with
+          | inl ms =>
+              rcases ms with ⟨message, salt⟩
+              rw [List.foldl_cons]
+              simp only
+              cases hanswers message salt answer (by simp) with
+              | inl hmemLeft =>
+                  rw [populateLeafQuery_eq_self_of_mem_fold
+                    (M := M) (S := S) (C := C) (depth := depth)
+                    leftEntries message salt answer labels leaves hmemLeft]
+                  exact populateLeavesFold_eq_self_of_mem_or_answers_not_known labels
+                    leftEntries entries leaves
+                    (fun message' salt' answer' hmem =>
+                      hanswers message' salt' answer'
+                        (List.mem_cons_of_mem _ hmem))
+              | inr hnotKnown =>
+                  rw [populateLeafQuery_eq_self_of_answer_not_known
+                    (M := M) (S := S) (C := C) (depth := depth)
+                    message salt answer labels
+                    (leftEntries.foldl
+                      (fun leaves entry =>
+                        match entry with
+                        | ⟨Sum.inl (message, salt), answer⟩ =>
+                            populateLeafQuery (depth := depth)
+                              message salt answer labels leaves
+                        | ⟨Sum.inr _, _⟩ => leaves)
+                      leaves)
+                    hnotKnown]
+                  exact populateLeavesFold_eq_self_of_mem_or_answers_not_known labels
+                    leftEntries entries leaves
+                    (fun message' salt' answer' hmem =>
+                      hanswers message' salt' answer'
+                        (List.mem_cons_of_mem _ hmem))
+          | inr cs =>
+              exact populateLeavesFold_eq_self_of_mem_or_answers_not_known labels
+                leftEntries entries leaves
+                (fun message salt answer hmem =>
+                  hanswers message salt answer (List.mem_cons_of_mem _ hmem))
+
+theorem populateLeavesFromTrace_append_eq_left_of_answers_not_known {depth : ℕ}
+    [DecidableEq C] (commitTrace openTrace : QueryLog (Oracle M S C))
+    (labels : PartialLabels C depth)
+    (hanswers : ∀ message salt answer,
+      ⟨Sum.inl (message, salt), answer⟩ ∈ openTrace →
+        answer ∉ knownLabels labels) :
+    populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+        (commitTrace ++ openTrace) labels =
+      populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+        commitTrace labels := by
+  unfold populateLeavesFromTrace
+  rw [partitionTrace_leafQueries_append (M := M) (S := S) (C := C)
+    commitTrace openTrace]
+  rw [List.foldl_append]
+  exact populateLeavesFold_eq_self_of_answers_not_known
+    (M := M) (S := S) (C := C) (depth := depth) labels
+    (partitionTrace (M := M) (S := S) (C := C) openTrace).leafQueries
+    (((partitionTrace (M := M) (S := S) (C := C) commitTrace).leafQueries).foldl
+      (fun leaves entry =>
+        match entry with
+        | ⟨Sum.inl (message, salt), answer⟩ =>
+            populateLeafQuery (depth := depth) message salt answer labels leaves
+        | ⟨Sum.inr _, _⟩ => leaves)
+      (emptyPartialLeaves (M := M) (S := S) (depth := depth)))
+    (fun message salt answer hmem =>
+      hanswers message salt answer
+        ((mem_partitionTrace_leafQueries_iff (M := M) (S := S) (C := C)
+          openTrace ⟨Sum.inl (message, salt), answer⟩).mp hmem).1)
+
+private theorem populateLeavesFromTrace_append_eq_left_of_mem_or_answers_not_known
+    {depth : ℕ} [DecidableEq C] (commitTrace openTrace : QueryLog (Oracle M S C))
+    (labels : PartialLabels C depth)
+    (hanswers : ∀ message salt answer,
+      ⟨Sum.inl (message, salt), answer⟩ ∈ openTrace →
+        ⟨Sum.inl (message, salt), answer⟩ ∈ commitTrace ∨
+          answer ∉ knownLabels labels) :
+    populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+        (commitTrace ++ openTrace) labels =
+      populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+        commitTrace labels := by
+  unfold populateLeavesFromTrace
+  rw [partitionTrace_leafQueries_append (M := M) (S := S) (C := C)
+    commitTrace openTrace]
+  rw [List.foldl_append]
+  exact populateLeavesFold_eq_self_of_mem_or_answers_not_known
+    (M := M) (S := S) (C := C) (depth := depth) labels
+    (partitionTrace (M := M) (S := S) (C := C) commitTrace).leafQueries
+    (partitionTrace (M := M) (S := S) (C := C) openTrace).leafQueries
+    (emptyPartialLeaves (M := M) (S := S) (depth := depth))
+    (fun message salt answer hmem =>
+      Or.imp
+        (fun hmemCommit =>
+          (mem_partitionTrace_leafQueries_iff (M := M) (S := S) (C := C)
+            commitTrace ⟨Sum.inl (message, salt), answer⟩).mpr
+            ⟨hmemCommit, ⟨(message, salt), rfl⟩⟩)
+        id
+        (hanswers message salt answer
+          ((mem_partitionTrace_leafQueries_iff (M := M) (S := S) (C := C)
+            openTrace ⟨Sum.inl (message, salt), answer⟩).mp hmem).1))
+
+/-- The partial extractor state reconstructed from a trace. -/
+def extractedStateFromTrace {depth : ℕ} [DecidableEq C]
+    (commitment : C) (trace : QueryLog (Oracle M S C)) :
+    ExtractedState M S C depth :=
+  let labels := buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+    (depth := depth) commitment trace
+  let leaves := populateLeavesFromTrace (M := M) (S := S) (C := C)
+    (depth := depth) trace labels
+  ⟨labels, leaves⟩
+
+theorem extractedStateFromTrace_append_eq_left_of_answers_not_mem {depth : ℕ}
+    [DecidableEq C] (commitment : C)
+    (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hanswers : ∀ entry, entry ∈ openTrace →
+      traceEntryAnswer (M := M) (S := S) (C := C) entry ∉
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace) :
+    extractedStateFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment (commitTrace ++ openTrace) =
+      extractedStateFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment commitTrace := by
+  have hlabels :
+      buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment (commitTrace ++ openTrace) =
+        buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace :=
+    buildPartialTreeFromTrace_append_eq_left_of_answers_not_mem
+      (M := M) (S := S) (C := C) (depth := depth)
+      commitment commitTrace openTrace
+      (fun left right answer hmem => by
+        simpa [traceEntryAnswer] using
+          hanswers ⟨Sum.inr (left, right), answer⟩ hmem)
+  have hleaves :
+      populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+          (commitTrace ++ openTrace)
+          (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+            (depth := depth) commitment commitTrace) =
+        populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+          commitTrace
+          (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+            (depth := depth) commitment commitTrace) :=
+    populateLeavesFromTrace_append_eq_left_of_answers_not_known
+      (M := M) (S := S) (C := C) (depth := depth)
+      commitTrace openTrace
+      (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment commitTrace)
+      (fun message salt answer hmem => by
+        simpa [traceEntryAnswer, traceKnownLabels] using
+          hanswers ⟨Sum.inl (message, salt), answer⟩ hmem)
+  simp [extractedStateFromTrace, hlabels, hleaves]
+
+theorem exists_open_answer_mem_traceKnownLabels_of_extractedStateFromTrace_append_ne
+    {depth : ℕ} [DecidableEq C] (commitment : C)
+    (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hchange :
+      extractedStateFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment (commitTrace ++ openTrace) ≠
+        extractedStateFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace) :
+    ∃ entry, entry ∈ openTrace ∧
+      traceEntryAnswer (M := M) (S := S) (C := C) entry ∈
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace := by
+  classical
+  by_contra hnone
+  apply hchange
+  exact extractedStateFromTrace_append_eq_left_of_answers_not_mem
+    (M := M) (S := S) (C := C) (depth := depth)
+    commitment commitTrace openTrace
+    (fun entry hmem htarget =>
+      hnone ⟨entry, hmem, htarget⟩)
+
+private theorem extractedStateFromTrace_append_eq_left_of_mem_or_answers_not_mem
+    {depth : ℕ} [DecidableEq C] (commitment : C)
+    (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hanswers : ∀ entry, entry ∈ openTrace →
+      entry ∈ commitTrace ∨
+        traceEntryAnswer (M := M) (S := S) (C := C) entry ∉
+          traceKnownLabels (M := M) (S := S) (C := C)
+            (depth := depth) commitment commitTrace) :
+    extractedStateFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment (commitTrace ++ openTrace) =
+      extractedStateFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment commitTrace := by
+  have hlabels :
+      buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment (commitTrace ++ openTrace) =
+        buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace :=
+    buildPartialTreeFromTrace_append_eq_left_of_mem_or_answers_not_mem
+      (M := M) (S := S) (C := C) (depth := depth)
+      commitment commitTrace openTrace
+      (fun left right answer hmem => by
+        exact Or.imp id
+          (by simp [traceEntryAnswer])
+          (hanswers ⟨Sum.inr (left, right), answer⟩ hmem))
+  have hleaves :
+      populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+          (commitTrace ++ openTrace)
+          (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+            (depth := depth) commitment commitTrace) =
+        populateLeavesFromTrace (M := M) (S := S) (C := C) (depth := depth)
+          commitTrace
+          (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+            (depth := depth) commitment commitTrace) :=
+    populateLeavesFromTrace_append_eq_left_of_mem_or_answers_not_known
+      (M := M) (S := S) (C := C) (depth := depth)
+      commitTrace openTrace
+      (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
+        (depth := depth) commitment commitTrace)
+      (fun message salt answer hmem => by
+        exact Or.imp id
+          (by simp [traceEntryAnswer, traceKnownLabels])
+          (hanswers ⟨Sum.inl (message, salt), answer⟩ hmem))
+  simp [extractedStateFromTrace, hlabels, hleaves]
+
+theorem
+exists_open_answer_mem_traceKnownLabels_and_not_mem_commitTrace_of_extractedStateFromTrace_append_ne
+    {depth : ℕ} [DecidableEq C] (commitment : C)
+    (commitTrace openTrace : QueryLog (Oracle M S C))
+    (hchange :
+      extractedStateFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment (commitTrace ++ openTrace) ≠
+        extractedStateFromTrace (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace) :
+    ∃ entry, entry ∈ openTrace ∧ entry ∉ commitTrace ∧
+      traceEntryAnswer (M := M) (S := S) (C := C) entry ∈
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace := by
+  classical
+  by_contra hnone
+  apply hchange
+  exact extractedStateFromTrace_append_eq_left_of_mem_or_answers_not_mem
+    (M := M) (S := S) (C := C) (depth := depth)
+    commitment commitTrace openTrace
+    (fun entry hmem => by
+      by_cases hcommit : entry ∈ commitTrace
+      · exact Or.inl hcommit
+      · exact Or.inr (fun hknown =>
+          hnone ⟨entry, hmem, hcommit, hknown⟩))
 
 /-- Deterministically totalize an extracted partial state into a full message
 and trapdoor. -/

@@ -65,6 +65,21 @@ variable {M S C α β : Type}
 abbrev OracleFn (M : Type) (S : Type) (C : Type) :=
   (t : (Oracle M S C).Domain) → (Oracle M S C).Range t
 
+/-- Interpret a lazy random-oracle cache as a total fixed oracle, using `default`
+for points that have not been sampled. -/
+noncomputable def oracleFnOfCache [Inhabited C]
+    (cache : QueryCache (Oracle M S C)) : OracleFn M S C :=
+  fun t =>
+    match cache t with
+    | some v => v
+    | none => default
+
+@[simp] theorem oracleFnOfCache_apply_of_some [Inhabited C]
+    {cache : QueryCache (Oracle M S C)} {t : (Oracle M S C).Domain}
+    {v : (Oracle M S C).Range t} (h : cache t = some v) :
+    oracleFnOfCache (M := M) (S := S) (C := C) cache t = v := by
+  simp [oracleFnOfCache, h]
+
 /-- Evaluate a Merkle oracle computation against a fixed oracle function. -/
 def eval (f : OracleFn M S C) (oa : OracleComp (Oracle M S C) α) : α :=
   simulateQ (QueryImpl.ofFn f) oa
@@ -514,6 +529,24 @@ theorem checkInternalQueryAnswer_eq_checkPathLabel_parent (f : OracleFn M S C)
       (f (checkLeafQuery (M := M) (S := S) (C := C) message authPath))
       authPath.siblings layer
 
+theorem traceEntryAnswer_checkInternalQuery (f : OracleFn M S C)
+    {depth : ℕ} (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
+    (layer : Fin depth) :
+    traceEntryAnswer (M := M) (S := S) (C := C)
+        ⟨checkInternalQuery (M := M) (S := S) (C := C) f idx message authPath layer,
+          f (checkInternalQuery (M := M) (S := S) (C := C)
+            f idx message authPath layer)⟩ =
+      checkInternalQueryAnswer (M := M) (S := S) (C := C)
+        f idx message authPath layer := by
+  unfold checkInternalQueryAnswer checkInternalQuery
+  by_cases hparity :
+      (pathPos idx
+        (⟨layer.1 + 1, Nat.succ_lt_succ layer.2⟩ : Fin (depth + 1))).1 % 2 = 0
+  · rw [if_pos hparity]
+    simp [queryAnswer, traceEntryAnswer]
+  · rw [if_neg hparity]
+    simp [queryAnswer, traceEntryAnswer]
+
 private theorem logEval_nodeCommit (f : OracleFn M S C) (left right : C) :
     logEval f (nodeCommit (C := C) left right : OracleComp (Oracle M S C) C) =
       (f (Sum.inr (left, right)), [⟨Sum.inr (left, right), f (Sum.inr (left, right))⟩]) := by
@@ -697,6 +730,142 @@ private theorem internalQueryPrefix_mem_recomputeRootAuxLogPrefix (f : OracleFn 
           rw [hquery]
           simpa [h, parent] using ih
 
+private theorem internalQueryPrefix_last_eq_first (f : OracleFn M S C) {n : ℕ}
+    (idxVal : ℕ) (current : C) (siblings : Vector C (n + 1)) :
+    internalQueryPrefix f idxVal current siblings (Fin.last n) =
+      if idxVal % 2 = 0 then
+        Sum.inr (current, siblings.head)
+      else
+        Sum.inr (siblings.head, current) := by
+  unfold internalQueryPrefix
+  have hchild0 :
+      pathLabelPrefix f idxVal current
+          (vectorTakeLE siblings (n + 1 - (n + 1)) (by omega)) =
+        current := by
+    have hlen :
+        pathLabelPrefix f idxVal current
+            (vectorTakeLE siblings (n + 1 - (n + 1)) (by omega)) =
+          pathLabelPrefix f idxVal current (vectorTakeLE siblings 0 (by omega)) :=
+      pathLabelPrefix_vectorTakeLE_congr (f := f) idxVal current siblings
+        (by omega) (by omega) (by omega)
+    rw [hlen]
+    exact
+      pathLabelPrefix_zero (M := M) (S := S) (C := C)
+        f idxVal current (vectorTakeLE siblings 0 (by omega))
+  by_cases h : idxVal % 2 = 0
+  · dsimp
+    have hcond : idxVal / 2 ^ (n + 1 - (n + 1)) % 2 = 0 := by
+      simpa using h
+    rw [if_pos hcond, if_pos h]
+    rw [hchild0]
+    exact congrArg (fun x => Sum.inr (current, x))
+      (by simpa using vector_reverse_get_last siblings)
+  · dsimp
+    have hcond : ¬ idxVal / 2 ^ (n + 1 - (n + 1)) % 2 = 0 := by
+      simpa using h
+    rw [if_neg hcond, if_neg h]
+    rw [hchild0]
+    exact congrArg (fun x => Sum.inr (x, current))
+      (by simpa using vector_reverse_get_last siblings)
+
+private theorem mem_recomputeRootAuxLogPrefix_iff_internalQueryPrefix
+    (f : OracleFn M S C) :
+    {height : ℕ} → (idxVal : ℕ) → (current : C) → (siblings : Vector C height) →
+      (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) →
+      entry ∈ recomputeRootAuxLogPrefix f idxVal current siblings ↔
+        ∃ layer : Fin height,
+          entry =
+            ⟨internalQueryPrefix f idxVal current siblings layer,
+              f (internalQueryPrefix f idxVal current siblings layer)⟩
+  | 0, _, _, _, entry => by
+      constructor
+      · intro h
+        cases h
+      · rintro ⟨layer, _⟩
+        exact Fin.elim0 layer
+  | n + 1, idxVal, current, siblings, entry => by
+      constructor
+      · intro hmem
+        unfold recomputeRootAuxLogPrefix at hmem
+        by_cases h : idxVal % 2 = 0
+        · simp [h] at hmem
+          rcases hmem with hhead | htail
+          · refine ⟨Fin.last n, ?_⟩
+            rw [hhead, internalQueryPrefix_last_eq_first, if_pos h]
+          · let parent := f (Sum.inr (current, siblings.head))
+            rcases
+              (mem_recomputeRootAuxLogPrefix_iff_internalQueryPrefix f
+                (idxVal / 2) parent siblings.tail entry).mp
+                (by simpa [parent] using htail) with
+              ⟨layer, hlayer⟩
+            let layer' : Fin (n + 1) := ⟨layer.1, Nat.lt_trans layer.2 (Nat.lt_succ_self n)⟩
+            have hlast : layer'.1 ≠ n := by
+              simp [layer']
+              omega
+            have hquery :
+                internalQueryPrefix f idxVal current siblings layer' =
+                  internalQueryPrefix f (idxVal / 2) parent siblings.tail layer := by
+              simpa [parent, layer', h] using
+                internalQueryPrefix_succ_of_lt f idxVal current siblings layer' hlast
+            refine ⟨layer', ?_⟩
+            rw [← hquery] at hlayer
+            exact hlayer
+        · simp [h] at hmem
+          rcases hmem with hhead | htail
+          · refine ⟨Fin.last n, ?_⟩
+            rw [hhead, internalQueryPrefix_last_eq_first, if_neg h]
+          · let parent := f (Sum.inr (siblings.head, current))
+            rcases
+              (mem_recomputeRootAuxLogPrefix_iff_internalQueryPrefix f
+                (idxVal / 2) parent siblings.tail entry).mp
+                (by simpa [parent] using htail) with
+              ⟨layer, hlayer⟩
+            let layer' : Fin (n + 1) := ⟨layer.1, Nat.lt_trans layer.2 (Nat.lt_succ_self n)⟩
+            have hlast : layer'.1 ≠ n := by
+              simp [layer']
+              omega
+            have hquery :
+                internalQueryPrefix f idxVal current siblings layer' =
+                  internalQueryPrefix f (idxVal / 2) parent siblings.tail layer := by
+              simpa [parent, layer', h] using
+                internalQueryPrefix_succ_of_lt f idxVal current siblings layer' hlast
+            refine ⟨layer', ?_⟩
+            rw [← hquery] at hlayer
+            exact hlayer
+      · rintro ⟨layer, rfl⟩
+        exact internalQueryPrefix_mem_recomputeRootAuxLogPrefix
+          (M := M) (S := S) (C := C) f idxVal current siblings layer
+
+private theorem mem_logEval_recomputeRootAux_iff_internalQueryPrefix
+    (f : OracleFn M S C) {height : ℕ} (idx : Index height)
+    (current : C) (siblings : Vector C height)
+    (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) :
+    entry ∈
+        (logEval f
+          (recomputeRootAux (M := M) (S := S) (C := C) idx current siblings)).2 ↔
+      ∃ layer : Fin height,
+        entry =
+          ⟨internalQueryPrefix f idx.1 current siblings layer,
+            f (internalQueryPrefix f idx.1 current siblings layer)⟩ := by
+  have hidx :
+      (⟨idx.1 % 2 ^ height,
+        Nat.mod_lt _ (pow_pos (by decide : 0 < (2 : ℕ)) _)⟩ : Index height) = idx := by
+    apply Fin.ext
+    exact Nat.mod_eq_of_lt idx.2
+  have hlog := logEval_recomputeRootAux_prefix (M := M) (S := S) (C := C)
+    f idx.1 current siblings
+  have hlogIdx :
+      logEval f
+          (recomputeRootAux (M := M) (S := S) (C := C) idx current siblings) =
+        (pathLabelPrefix f idx.1 current siblings,
+          recomputeRootAuxLogPrefix f idx.1 current siblings) := by
+    conv_lhs =>
+      rw [← hidx]
+    exact hlog
+  rw [hlogIdx]
+  exact mem_recomputeRootAuxLogPrefix_iff_internalQueryPrefix
+    f idx.1 current siblings entry
+
 private theorem internalQueryPrefix_mem_logEval_recomputeRootAux (f : OracleFn M S C)
     {height : ℕ} (idx : Index height) (current : C) (siblings : Vector C height)
     (layer : Fin height) :
@@ -786,6 +955,84 @@ theorem checkInternalQuery_mem_logEval_checkSingle [DecidableEq C] (f : OracleFn
     rw [checkInternalQuery_eq_internalQueryPrefix]
     exact hmem
   simp [logEval_checkSingle, logEval_recomputeRootSingle, hmem']
+
+theorem mem_logEval_checkSingle_iff_leaf_or_internal [DecidableEq C]
+    (f : OracleFn M S C) {depth : ℕ} (commitment : C) (idx : Index depth)
+    (message : M) (authPath : AuthPath S C depth)
+    (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) :
+    entry ∈
+        (logEval f
+          (checkSingle (M := M) (S := S) (C := C)
+            commitment idx message authPath)).2 ↔
+      entry =
+          ⟨checkLeafQuery (M := M) (S := S) (C := C) message authPath,
+            f (checkLeafQuery (M := M) (S := S) (C := C) message authPath)⟩ ∨
+        ∃ layer : Fin depth,
+          entry =
+            ⟨checkInternalQuery (M := M) (S := S) (C := C)
+                f idx message authPath layer,
+              f (checkInternalQuery (M := M) (S := S) (C := C)
+                f idx message authPath layer)⟩ := by
+  let leafQuery := checkLeafQuery (M := M) (S := S) (C := C) message authPath
+  let leafEntry :
+      (t : (Oracle M S C).Domain) × (Oracle M S C).Range t :=
+    ⟨leafQuery, f leafQuery⟩
+  have hlog :
+      (logEval f
+        (checkSingle (M := M) (S := S) (C := C)
+          commitment idx message authPath)).2 =
+        leafEntry ::
+          (logEval f
+            (recomputeRootAux (M := M) (S := S) (C := C)
+              idx (f leafQuery) authPath.siblings)).2 := by
+    rw [logEval_checkSingle, logEval_recomputeRootSingle]
+    rfl
+  rw [hlog]
+  constructor
+  · intro hmem
+    rcases List.mem_cons.mp hmem with hleaf | htail
+    · exact .inl hleaf
+    · right
+      rcases
+        (mem_logEval_recomputeRootAux_iff_internalQueryPrefix
+          (M := M) (S := S) (C := C) f idx (f leafQuery) authPath.siblings entry).mp
+          htail with
+        ⟨layer, hlayer⟩
+      refine ⟨layer, ?_⟩
+      have hquery :
+          checkInternalQuery (M := M) (S := S) (C := C)
+              f idx message authPath layer =
+            internalQueryPrefix f idx.1 (f leafQuery) authPath.siblings layer := by
+        simpa [leafQuery] using
+          checkInternalQuery_eq_internalQueryPrefix
+            (M := M) (S := S) (C := C) f idx message authPath layer
+      rw [hquery]
+      exact hlayer
+  · rintro (hleaf | hinternal)
+    · exact List.mem_cons.mpr (.inl (by simpa [leafEntry] using hleaf))
+    · rcases hinternal with ⟨layer, hlayer⟩
+      apply List.mem_cons.mpr
+      right
+      have htail :
+          entry ∈
+            (logEval f
+              (recomputeRootAux (M := M) (S := S) (C := C)
+                idx (f leafQuery) authPath.siblings)).2 := by
+        apply
+          (mem_logEval_recomputeRootAux_iff_internalQueryPrefix
+            (M := M) (S := S) (C := C) f idx (f leafQuery)
+              authPath.siblings entry).mpr
+        refine ⟨layer, ?_⟩
+        have hquery :
+            checkInternalQuery (M := M) (S := S) (C := C)
+                f idx message authPath layer =
+              internalQueryPrefix f idx.1 (f leafQuery) authPath.siblings layer := by
+          simpa [leafQuery] using
+            checkInternalQuery_eq_internalQueryPrefix
+              (M := M) (S := S) (C := C) f idx message authPath layer
+        rw [hquery] at hlayer
+        exact hlayer
+      exact htail
 
 theorem logContains_checkSingle_checkEntriesAux [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) {I : IndexSet depth} (commitment : C)
