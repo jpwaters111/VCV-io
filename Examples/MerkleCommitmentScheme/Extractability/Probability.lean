@@ -616,112 +616,12 @@ private theorem exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
         (M := M) (S := S) (C := C) (AUX := AUX)
         f x idx message authPath hcoll hcheck hallInternal hescape
 
-private theorem witnessTraceEscapeEvent_implies_freshTraceKnownLabelHit_of_rest_support
-    {depth t : ℕ}
-    [DecidableEq M] [DecidableEq S] [DecidableEq C]
-    [Fintype M] [Fintype S] [Fintype C]
-    [Inhabited M] [Inhabited S] [Inhabited C]
-    (A : ExtractAdversary M S C AUX depth t)
-    {commitment : C} {aux : AUX}
-    {commitTrace : QueryLog (Oracle M S C)}
-    {cache₁ : QueryCache (Oracle M S C)}
-    {z : WitnessExtractTranscript M S C AUX depth × QueryCache (Oracle M S C)}
-    (hx : (((commitment, aux), commitTrace), cache₁) ∈ support
-      ((simulateQ cachingOracle
-        (extractabilityWitnessCommitPart (M := M) (S := S) (C := C) A)).run ∅))
-    (hz : z ∈ support
-      ((simulateQ cachingOracle
-        (extractabilityWitnessRest (M := M) (S := S) (C := C)
-          A commitment aux commitTrace)).run cache₁))
-    (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) z.1.base)
-    (hescape :
-      WitnessTraceEscapeEvent (M := M) (S := S) (C := C)
-        (oracleFnOfCache (M := M) (S := S) (C := C) z.2) z.1) :
-    FreshTraceKnownLabelHit (M := M) (S := S) (C := C)
-      commitment commitTrace cache₁ z := by
-  rcases hescape with ⟨i, hw, hcheck, hnotContains⟩
-  have hzBaseCommitment : z.1.base.commitment = commitment := by
-    unfold extractabilityWitnessRest at hz
-    rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
-    simp only [Set.mem_iUnion] at hz
-    rcases hz with ⟨⟨⟨opening, openTrace⟩, cache₂⟩, hopen, hz⟩
-    let base : ExtractTranscript M S C AUX depth :=
-      { commitment := commitment
-        aux := aux
-        commitTrace := commitTrace
-        opening := opening
-        openTrace := openTrace }
-    cases hselect : selectWitness? (M := M) (S := S) (C := C) base with
-    | none =>
-        simp [base, hselect] at hz
-        subst z
-        rfl
-    | some j =>
-        rw [hselect] at hz
-        rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
-        simp only [Set.mem_iUnion] at hz
-        rcases hz with ⟨⟨single, cache₃⟩, hsingle, hzpure⟩
-        simp [base] at hzpure
-        subst z
-        rfl
-  have hzBaseTrace : z.1.base.commitTrace = commitTrace := by
-    unfold extractabilityWitnessRest at hz
-    rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
-    simp only [Set.mem_iUnion] at hz
-    rcases hz with ⟨⟨⟨opening, openTrace⟩, cache₂⟩, hopen, hz⟩
-    let base : ExtractTranscript M S C AUX depth :=
-      { commitment := commitment
-        aux := aux
-        commitTrace := commitTrace
-        opening := opening
-        openTrace := openTrace }
-    cases hselect : selectWitness? (M := M) (S := S) (C := C) base with
-    | none =>
-        simp [base, hselect] at hz
-        subst z
-        rfl
-    | some j =>
-        rw [hselect] at hz
-        rw [simulateQ_bind, StateT.run_bind, support_bind] at hz
-        simp only [Set.mem_iUnion] at hz
-        rcases hz with ⟨⟨single, cache₃⟩, hsingle, hzpure⟩
-        simp [base] at hzpure
-        subst z
-        rfl
-  let f := oracleFnOfCache (M := M) (S := S) (C := C) z.2
-  rcases
-    exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
-      (M := M) (S := S) (C := C) (AUX := AUX)
-      f z.1.base i.1 (z.1.base.opening.message i)
-      (z.1.base.opening.proof i) hcoll hcheck hnotContains with
-  ⟨entry, hmemLog, hnotCommitBase, htargetBase⟩
-  have hfinal :
-      z.2 entry.1 = some entry.2 :=
-    singleTrace_entry_in_final_cache_of_rest_support
-      (M := M) (S := S) (C := C)
-      A commitment aux commitTrace cache₁ hz i hw entry hmemLog
-  have hnotCommit : entry ∉ commitTrace := by
-    simpa [hzBaseTrace] using hnotCommitBase
-  have htarget :
-      traceEntryAnswer (M := M) (S := S) (C := C) entry ∈
-        traceKnownLabels (M := M) (S := S) (C := C)
-          (depth := depth) commitment commitTrace := by
-    simpa [hzBaseCommitment, hzBaseTrace] using htargetBase
-  have hmono :
-      cache₁ ≤ z.2 :=
-    OracleComp.simulateQ_cachingOracle_cache_le
-      (spec := Oracle M S C)
-      (extractabilityWitnessRest (M := M) (S := S) (C := C)
-        A commitment aux commitTrace)
-      cache₁ z hz
-  exact
-    freshTraceKnownLabelHit_of_final_cache_entry_not_mem
-      (M := M) (S := S) (C := C)
-      A hx hmono entry hfinal hnotCommit htarget
-
+/-- Every rest-phase transcript keeps the commitment, auxiliary value, and
+commit trace fixed from the commit phase. This small shape lemma keeps the
+later bad-event proofs from repeating the `selectWitness?` case split. -/
 private theorem rest_support_base_fields {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
-    [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
     (A : ExtractAdversary M S C AUX depth t)
     {commitment : C} {aux : AUX}
     {commitTrace : QueryLog (Oracle M S C)}
@@ -757,6 +657,68 @@ private theorem rest_support_base_fields {depth t : ℕ}
       simp [base] at hzpure
       subst z
       simp [base]
+
+/-- A selected verifier trace can escape the commit trace only by producing a
+fresh post-commit random-oracle answer that equals a label already known to the
+extractor from the commit trace. This is the selected-witness source of the
+`(t₂ + depth + 1) * knownLabels / |C|` summand. -/
+private theorem witnessTraceEscapeEvent_implies_freshTraceKnownLabelHit_of_rest_support
+    {depth t : ℕ}
+    [DecidableEq M] [DecidableEq S] [DecidableEq C]
+    [Fintype M] [Fintype S] [Fintype C]
+    [Inhabited M] [Inhabited S] [Inhabited C]
+    (A : ExtractAdversary M S C AUX depth t)
+    {commitment : C} {aux : AUX}
+    {commitTrace : QueryLog (Oracle M S C)}
+    {cache₁ : QueryCache (Oracle M S C)}
+    {z : WitnessExtractTranscript M S C AUX depth × QueryCache (Oracle M S C)}
+    (hx : (((commitment, aux), commitTrace), cache₁) ∈ support
+      ((simulateQ cachingOracle
+        (extractabilityWitnessCommitPart (M := M) (S := S) (C := C) A)).run ∅))
+    (hz : z ∈ support
+      ((simulateQ cachingOracle
+        (extractabilityWitnessRest (M := M) (S := S) (C := C)
+          A commitment aux commitTrace)).run cache₁))
+    (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) z.1.base)
+    (hescape :
+      WitnessTraceEscapeEvent (M := M) (S := S) (C := C)
+        (oracleFnOfCache (M := M) (S := S) (C := C) z.2) z.1) :
+    FreshTraceKnownLabelHit (M := M) (S := S) (C := C)
+      commitment commitTrace cache₁ z := by
+  rcases hescape with ⟨i, hw, hcheck, hnotContains⟩
+  have hfields :=
+    rest_support_base_fields (M := M) (S := S) (C := C)
+      A hz
+  let f := oracleFnOfCache (M := M) (S := S) (C := C) z.2
+  rcases
+    exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
+      (M := M) (S := S) (C := C) (AUX := AUX)
+      f z.1.base i.1 (z.1.base.opening.message i)
+      (z.1.base.opening.proof i) hcoll hcheck hnotContains with
+  ⟨entry, hmemLog, hnotCommitBase, htargetBase⟩
+  have hfinal :
+      z.2 entry.1 = some entry.2 :=
+    singleTrace_entry_in_final_cache_of_rest_support
+      (M := M) (S := S) (C := C)
+      A commitment aux commitTrace cache₁ hz i hw entry hmemLog
+  have hnotCommit : entry ∉ commitTrace := by
+    simpa [hfields.2.2] using hnotCommitBase
+  have htarget :
+      traceEntryAnswer (M := M) (S := S) (C := C) entry ∈
+        traceKnownLabels (M := M) (S := S) (C := C)
+          (depth := depth) commitment commitTrace := by
+    simpa [hfields.1, hfields.2.2] using htargetBase
+  have hmono :
+      cache₁ ≤ z.2 :=
+    OracleComp.simulateQ_cachingOracle_cache_le
+      (spec := Oracle M S C)
+      (extractabilityWitnessRest (M := M) (S := S) (C := C)
+        A commitment aux commitTrace)
+      cache₁ z hz
+  exact
+    freshTraceKnownLabelHit_of_final_cache_entry_not_mem
+      (M := M) (S := S) (C := C)
+      A hx hmono entry hfinal hnotCommit htarget
 
 private theorem witnessBadEventROM_implies_freshTraceKnownLabelHit_of_rest_support
     {depth t : ℕ}

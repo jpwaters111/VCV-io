@@ -362,6 +362,9 @@ private theorem stateful_selected_branch_le_projected_witnessGame_core {depth n 
   apply OracleComp.probEvent_bind_mono_hetero
   intro p₁
   rcases p₁ with ⟨⟨⟨k', opening⟩, openTrace⟩, cache₂⟩
+  -- If the open phase selected the projected coordinate, the two games run the
+  -- same selected single-check computation. Otherwise the `k`-selected event
+  -- is impossible on the stateful side.
   by_cases hsel : k' = k
   · subst k'
     have hkk : k = k := rfl
@@ -396,26 +399,6 @@ private theorem stateful_selected_branch_le_projected_witnessGame_core {depth n 
             selectWitness? (M := M) (S := S) (C := C) base₁ =
                 selectWitness? (M := M) (S := S) (C := C) base₀ := hselect
             _ = none := hw
-        have hbaseIf :
-            ({ commitment := p.1.1.1 k
-               aux := p.1.1
-               commitTrace := p.1.2
-               opening := if k = k then opening else
-                 emptyOpeningData (M := M) (S := S) (C := C) (depth := depth)
-               openTrace := openTrace ++ [] } :
-              ExtractTranscript M S C ((Fin n → C) × AUX) depth) = base₁ := by
-          simp [base₁]
-        have hwIf :
-            selectWitness? (M := M) (S := S) (C := C)
-              ({ commitment := p.1.1.1 k
-                 aux := p.1.1
-                 commitTrace := p.1.2
-                 opening := if k = k then opening else
-                   emptyOpeningData (M := M) (S := S) (C := C) (depth := depth)
-                 openTrace := openTrace ++ [] } :
-                ExtractTranscript M S C ((Fin n → C) × AUX) depth) = none := by
-          rw [hbaseIf]
-          exact hw₁
         have hleftWin :
             ¬ MultiExtractabilityStatefulWitnessWinROM (M := M) (S := S) (C := C)
               (({ commitments := p.1.1.1
@@ -434,23 +417,7 @@ private theorem stateful_selected_branch_le_projected_witnessGame_core {depth n 
               simpa [MultiExtractabilityStatefulWitnessWinROM,
                 MultiExtractabilityStatefulWitnessTranscript.toWitnessTranscript]
                 using h)
-        have hrightPred :
-            ¬ WitnessExtractabilityWinROM (M := M) (S := S) (C := C)
-              (({ base :=
-                    { commitment := p.1.1.1 k
-                      aux := p.1.1
-                      commitTrace := p.1.2
-                      opening := if k = k then opening else
-                        emptyOpeningData (M := M) (S := S) (C := C) (depth := depth)
-                      openTrace := openTrace ++ [] }
-                  witness? := none
-                  singleCheck? := none } :
-                WitnessExtractTranscript M S C ((Fin n → C) × AUX) depth),
-                cache₂) :=
-          witnessExtractabilityWinROM_none_false
-            (M := M) (S := S) (C := C)
-            (AUX := ((Fin n → C) × AUX)) (cache := cache₂)
-        simp [simulateQ_pure, StateT.run_pure, hw₁, hleftWin, hrightPred]
+        simp [simulateQ_pure, StateT.run_pure, hw₁, hleftWin]
     | some i =>
         have hw₁ :
             selectWitness? (M := M) (S := S) (C := C) base₁ = some i := by
@@ -458,15 +425,6 @@ private theorem stateful_selected_branch_le_projected_witnessGame_core {depth n 
             selectWitness? (M := M) (S := S) (C := C) base₁ =
                 selectWitness? (M := M) (S := S) (C := C) base₀ := hselect
             _ = some i := hw
-        have hbaseIf :
-            ({ commitment := p.1.1.1 k
-               aux := p.1.1
-               commitTrace := p.1.2
-               opening := if k = k then opening else
-                 emptyOpeningData (M := M) (S := S) (C := C) (depth := depth)
-               openTrace := openTrace ++ [] } :
-              ExtractTranscript M S C ((Fin n → C) × AUX) depth) = base₁ := by
-          simp [base₁]
         simp [hw₁, simulateQ_bind, StateT.run_bind,
           map_eq_bind_pure_comp]
         have hprob :=
