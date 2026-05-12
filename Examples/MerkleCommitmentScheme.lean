@@ -3,7 +3,7 @@ Copyright (c) 2026 OpenAI Codex. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: OpenAI Codex
 -/
-import Examples.MerkleCommitmentScheme.Common
+import Examples.MerkleCommitmentScheme.Scheme
 import Examples.MerkleCommitmentScheme.Support
 import Examples.MerkleCommitmentScheme.Completeness
 import Examples.MerkleCommitmentScheme.Collision
@@ -16,7 +16,7 @@ import Examples.MerkleCommitmentScheme.MultiExtractability
 
 Public aggregator for the Merkle commitment construction and security proofs.
 
-The deterministic stack is `Common`, `Completeness`, and `Collision`.
+The deterministic stack is `Scheme`, `Completeness`, and `Collision`.
 The probability-facing security surface is:
 
 * `MerkleTree.extractability_bound`, using `MerkleTree.extractabilityErrorTerm`;

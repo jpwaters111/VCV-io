@@ -14,6 +14,11 @@ import VCVio.OracleComp.QueryTracking.LoggingOracle
 Deterministic evaluation helpers for Merkle computations against a fixed oracle
 function, together with log-level collision predicates used in the textbook
 collision lemmas.
+
+The trace facts here are deliberately fixed-oracle facts. Security modules use
+them to identify the exact Merkle queries made by `checkSingle` and `check`,
+then hand those logs to the generic ROM/cache probability lemmas from the basic
+commitment support.
 -/
 
 open OracleComp OracleSpec
@@ -26,15 +31,19 @@ namespace LogContains
 
 variable {ι : Type} {spec : OracleSpec ι}
 
+/-- Log containment is reflexive. -/
 theorem refl (log : QueryLog spec) : LogContains log log := fun _ h => h
 
+/-- Log containment is transitive. -/
 theorem trans {l₀ l₁ l₂ : QueryLog spec}
     (h₀₁ : LogContains l₀ l₁) (h₁₂ : LogContains l₁ l₂) :
     LogContains l₀ l₂ := fun entry h => h₁₂ entry (h₀₁ entry h)
 
+/-- The left side of an appended log is contained in the append. -/
 theorem append_left (left right : QueryLog spec) : LogContains left (left ++ right) :=
   fun _ h => List.mem_append.mpr (.inl h)
 
+/-- The right side of an appended log is contained in the append. -/
 theorem append_right (left right : QueryLog spec) : LogContains right (left ++ right) :=
   fun _ h => List.mem_append.mpr (.inr h)
 
@@ -49,6 +58,7 @@ namespace CrossLogCollision
 
 variable {ι : Type} {spec : OracleSpec ι}
 
+/-- Cross-log collisions are monotone under log containment. -/
 theorem mono {log₀ log₀' log₁ log₁' : QueryLog spec}
     (h₀ : LogContains log₀ log₀') (h₁ : LogContains log₁ log₁') :
     CrossLogCollision log₀ log₁ → CrossLogCollision log₀' log₁' := by
@@ -135,6 +145,8 @@ theorem logEval_fst_eq_eval (f : OracleFn M S C)
 @[simp] theorem logEval_pure (f : OracleFn M S C) (x : α) :
     logEval f (pure x : OracleComp (Oracle M S C) α) = (x, []) := rfl
 
+/-- Fixed-oracle logging of a bind appends the log of the first computation to
+the log of the continuation. -/
 theorem logEval_bind (f : OracleFn M S C) (oa : OracleComp (Oracle M S C) α)
     (ob : α → OracleComp (Oracle M S C) β) :
     logEval f (oa >>= ob) =
@@ -147,11 +159,17 @@ theorem logEval_bind (f : OracleFn M S C) (oa : OracleComp (Oracle M S C) α)
   | mk a log =>
       rfl
 
+/-- `checkSingle` accepts exactly when the recomputed root equals the supplied
+commitment. -/
 theorem eval_checkSingle_eq_true_iff [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C) (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth) :
-    eval f (checkSingle (M := M) (S := S) (C := C) commitment idx message authPath) = true ↔
-      eval f (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath) = commitment := by
+    eval f
+        (checkSingle (M := M) (S := S) (C := C)
+          commitment idx message authPath) = true ↔
+      eval f
+        (recomputeRootSingle (M := M) (S := S) (C := C)
+          idx message authPath) = commitment := by
   rw [checkSingle, eval_bind, eval_pure]
   constructor
   · intro h
@@ -195,6 +213,7 @@ def checkInternalQuery (f : OracleFn M S C) {depth : ℕ} (idx : Index depth) (m
   else
     Sum.inr (siblingLabel, childLabel)
 
+/-- Unfolding formula for the root-layer verifier path label. -/
 @[simp] theorem checkPathLabel_root (f : OracleFn M S C) {depth : ℕ} (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth) :
     checkPathLabel f idx message authPath ⟨0, Nat.succ_pos _⟩ =
@@ -210,6 +229,7 @@ def checkInternalQuery (f : OracleFn M S C) {depth : ℕ} (idx : Index depth) (m
         ⟨authPath.salt, truncSiblings⟩ := by
   rfl
 
+/-- Unfolding formula for the leaf-layer verifier path label. -/
 @[simp] theorem checkPathLabel_leaf (f : OracleFn M S C) {depth : ℕ} (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth) :
     checkPathLabel f idx message authPath (Fin.last depth) =
@@ -225,6 +245,8 @@ def checkInternalQuery (f : OracleFn M S C) {depth : ℕ} (idx : Index depth) (m
         ⟨authPath.salt, truncSiblings⟩ := by
   simp [checkPathLabel]
 
+/-- The internal query at `layer` hashes the child path label with the copath
+label in the orientation dictated by the path position parity. -/
 theorem checkPathLabel_parent (f : OracleFn M S C) {depth : ℕ} (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth) (layer : Fin depth) :
     checkInternalQuery (M := M) (S := S) (C := C) f idx message authPath layer =
@@ -237,6 +259,15 @@ theorem checkPathLabel_parent (f : OracleFn M S C) {depth : ℕ} (idx : Index de
         Sum.inr (siblingLabel, childLabel) := by
   rfl
 
+/-
+The next vector/prefix helpers relate the verifier's truncated bottom-up
+sibling vector to a top-down internal-query layer. They are plumbing for
+`checkInternalQueryAnswer_eq_checkPathLabel_parent` and the membership theorem
+for internal verifier queries.
+-/
+
+/-- Take exactly `k` entries from a vector when `k <= n`, avoiding repeated
+casts at call sites. -/
 private def vectorTakeLE {α : Type} {n : ℕ} (v : Vector α n) (k : ℕ) (hk : k ≤ n) :
     Vector α k :=
   Vector.cast (by simp [Nat.min_eq_left hk]) (v.take k)
@@ -303,6 +334,15 @@ private theorem vector_reverse_get_cast_succ {α : Type} {n : ℕ} (v : Vector �
   congr
   omega
 
+/-!
+The next prefix definitions expose the top-down view of a bottom-up verifier
+recomputation. They are intentionally private: public users should reason with
+`checkPathLabel`, `checkInternalQueryAnswer`, and the final membership lemmas
+below.
+-/
+
+/-- Functional recomputation of the path label after consuming a prefix of the
+bottom-up sibling vector. -/
 private def pathLabelPrefix (f : OracleFn M S C) (idxVal : ℕ) (current : C)
     {height : ℕ} (siblings : Vector C height) : C :=
   recomputeRootAuxWithHash (fun x => f (Sum.inr x))
@@ -322,6 +362,8 @@ private theorem pathLabelPrefix_vectorTakeLE_congr (f : OracleFn M S C)
   subst h
   rfl
 
+/-- One bottom-up recomputation step: hash the current label with the sibling
+head, then recurse on the sibling tail and parent index. -/
 private theorem pathLabelPrefix_succ (f : OracleFn M S C) {n k : ℕ}
     (idxVal : ℕ) (current : C) (siblings : Vector C (n + 1)) (hk : k ≤ n) :
     pathLabelPrefix f idxVal current (vectorTakeLE siblings (k + 1) (Nat.succ_le_succ hk)) =
@@ -354,6 +396,8 @@ private theorem pathLabelPrefix_succ (f : OracleFn M S C) {n k : ℕ}
   · simp [hparity, h, hparentIdx]
   · simp [hparity, h, hparentIdx]
 
+/-- Internal query appearing at a top-down layer, expressed through the same
+bottom-up prefix consumed by `recomputeRootAux`. -/
 private def internalQueryPrefix (f : OracleFn M S C) (idxVal : ℕ) (current : C)
     {height : ℕ} (siblings : Vector C height) (layer : Fin height) :
     (Oracle M S C).Domain :=
@@ -371,6 +415,8 @@ private def queryAnswer (f : OracleFn M S C) (t : (Oracle M S C).Domain) : C :=
   | Sum.inl q => f (Sum.inl q)
   | Sum.inr q => f (Sum.inr q)
 
+/-- The answer to a top-down internal query is the parent path label obtained
+after consuming all bottom-up siblings from that layer down to the leaf. -/
 private theorem internalQueryPrefix_answer (f : OracleFn M S C) :
     {height : ℕ} → (idxVal : ℕ) → (current : C) → (siblings : Vector C height) →
       (layer : Fin height) →
@@ -494,6 +540,8 @@ private theorem internalQueryPrefix_answer (f : OracleFn M S C) :
           exact hstep.trans hright
         simpa [layer'] using hparentLabel
 
+/-- `checkPathLabel` is the public top-down notation for the private
+bottom-up prefix recomputation. -/
 private theorem checkPathLabel_eq_pathLabelPrefix (f : OracleFn M S C) {depth : ℕ}
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
     (layer : Fin (depth + 1)) :
@@ -504,6 +552,8 @@ private theorem checkPathLabel_eq_pathLabelPrefix (f : OracleFn M S C) {depth : 
   simp [checkPathLabel, pathLabelPrefix, checkLeafQuery, vectorTakeLE,
     recomputeRootSingleWithHash, localIndex]
 
+/-- `checkInternalQuery` is the public top-down notation for the private
+internal-query prefix. -/
 private theorem checkInternalQuery_eq_internalQueryPrefix (f : OracleFn M S C) {depth : ℕ}
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
     (layer : Fin depth) :
@@ -526,6 +576,13 @@ def checkInternalQueryAnswer (f : OracleFn M S C) {depth : ℕ} (idx : Index dep
     (message : M) (authPath : AuthPath S C depth) (layer : Fin depth) : C :=
   queryAnswer f (checkInternalQuery (M := M) (S := S) (C := C) f idx message authPath layer)
 
+/-- The answer to the internal verifier query at top-down layer `layer` is the
+path label one layer closer to the root.
+
+This is the reconstruction bridge used by extractability: if a contained
+single-check trace includes this query and the answer is unique in the commit
+trace, then the extractor can justify the parent label from the child/copath
+labels. -/
 theorem checkInternalQueryAnswer_eq_checkPathLabel_parent (f : OracleFn M S C)
     {depth : ℕ} (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
     (layer : Fin depth) :
@@ -538,6 +595,8 @@ theorem checkInternalQueryAnswer_eq_checkPathLabel_parent (f : OracleFn M S C)
       (f (checkLeafQuery (M := M) (S := S) (C := C) message authPath))
       authPath.siblings layer
 
+/-- The answer projection of the dependent query-log entry for
+`checkInternalQuery` agrees with `checkInternalQueryAnswer`. -/
 theorem traceEntryAnswer_checkInternalQuery (f : OracleFn M S C)
     {depth : ℕ} (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
     (layer : Fin depth) :
@@ -562,6 +621,15 @@ private theorem logEval_nodeCommit (f : OracleFn M S C) (left right : C) :
   simpa [nodeCommit] using
     (logEval_query (M := M) (S := S) (C := C) f (Sum.inr (left, right)))
 
+/-!
+The following log-prefix helpers characterize exactly the internal-node
+queries produced by `recomputeRootAux`. They make later public trace theorems
+read as: a single-check log contains the leaf query and one internal query per
+Merkle layer.
+-/
+
+/-- Internal-node query log produced by recomputing a path from a current label
+and a bottom-up sibling vector. -/
 private def recomputeRootAuxLogPrefix (f : OracleFn M S C) (idxVal : ℕ) (current : C) :
     {height : ℕ} → Vector C height → QueryLog (Oracle M S C)
   | 0, _ => []
@@ -575,6 +643,8 @@ private def recomputeRootAuxLogPrefix (f : OracleFn M S C) (idxVal : ℕ) (curre
         ⟨Sum.inr (siblings.head, current), parent⟩ ::
           recomputeRootAuxLogPrefix f (idxVal / 2) parent siblings.tail
 
+/-- Exact logged evaluation of `recomputeRootAux`: the value is the path prefix
+label and the log is the corresponding internal-query prefix list. -/
 private theorem logEval_recomputeRootAux_prefix (f : OracleFn M S C) :
     {height : ℕ} → (idxVal : ℕ) → (current : C) → (siblings : Vector C height) →
       logEval f
@@ -611,6 +681,8 @@ private theorem logEval_recomputeRootAux_prefix (f : OracleFn M S C) :
         simp [hparity, h, hparentIdx, recomputeRootAuxLogPrefix, logEval_bind,
           logEval_nodeCommit, logEval_recomputeRootAux_prefix, pathLabelPrefix]
 
+/-- Non-last top-down internal queries are found in the tail recomputation
+after the first bottom-up step. -/
 private theorem internalQueryPrefix_succ_of_lt (f : OracleFn M S C) {n : ℕ}
     (idxVal : ℕ) (current : C) (siblings : Vector C (n + 1))
     (layer : Fin (n + 1)) (hlast : layer.1 ≠ n) :
@@ -670,6 +742,8 @@ private theorem internalQueryPrefix_succ_of_lt (f : OracleFn M S C) {n : ℕ}
   simp [hchild, hchildLabel, hdiv',
     vector_reverse_get_cast_succ (v := siblings) (i := layer'), layer', parent]
 
+/-- Every public top-down internal query has a corresponding entry in the
+private recomputation log prefix. -/
 private theorem internalQueryPrefix_mem_recomputeRootAuxLogPrefix (f : OracleFn M S C) :
     {height : ℕ} → (idxVal : ℕ) → (current : C) → (siblings : Vector C height) →
       (layer : Fin height) →
@@ -739,6 +813,8 @@ private theorem internalQueryPrefix_mem_recomputeRootAuxLogPrefix (f : OracleFn 
           rw [hquery]
           simpa [h, parent] using ih
 
+/-- The topmost bottom-up internal query is the query for the last top-down
+layer. -/
 private theorem internalQueryPrefix_last_eq_first (f : OracleFn M S C) {n : ℕ}
     (idxVal : ℕ) (current : C) (siblings : Vector C (n + 1)) :
     internalQueryPrefix f idxVal current siblings (Fin.last n) =
@@ -777,6 +853,8 @@ private theorem internalQueryPrefix_last_eq_first (f : OracleFn M S C) {n : ℕ}
     exact congrArg (fun x => Sum.inr (x, current))
       (by simpa using vector_reverse_get_last siblings)
 
+/-- The private recomputation log contains exactly the internal-query prefix
+entries, one for each non-root layer. -/
 private theorem mem_recomputeRootAuxLogPrefix_iff_internalQueryPrefix
     (f : OracleFn M S C) :
     {height : ℕ} → (idxVal : ℕ) → (current : C) → (siblings : Vector C height) →
@@ -845,6 +923,8 @@ private theorem mem_recomputeRootAuxLogPrefix_iff_internalQueryPrefix
         exact internalQueryPrefix_mem_recomputeRootAuxLogPrefix
           (M := M) (S := S) (C := C) f idxVal current siblings layer
 
+/-- Membership characterization for the actual `logEval` log of
+`recomputeRootAux`. -/
 private theorem mem_logEval_recomputeRootAux_iff_internalQueryPrefix
     (f : OracleFn M S C) {height : ℕ} (idx : Index height)
     (current : C) (siblings : Vector C height)
@@ -875,6 +955,8 @@ private theorem mem_logEval_recomputeRootAux_iff_internalQueryPrefix
   exact mem_recomputeRootAuxLogPrefix_iff_internalQueryPrefix
     f idx.1 current siblings entry
 
+/-- A particular internal-query prefix entry appears in the actual
+`recomputeRootAux` log. -/
 private theorem internalQueryPrefix_mem_logEval_recomputeRootAux (f : OracleFn M S C)
     {height : ℕ} (idx : Index height) (current : C) (siblings : Vector C height)
     (layer : Fin height) :
@@ -902,6 +984,8 @@ private theorem internalQueryPrefix_mem_logEval_recomputeRootAux (f : OracleFn M
   rw [hlogIdx]
   exact hmem
 
+/-- Logging commutes with pure postprocessing: mapping a value does not add
+queries. -/
 theorem logEval_map (f : OracleFn M S C) (g : α → β)
     (oa : OracleComp (Oracle M S C) α) :
     logEval f (g <$> oa) = let p := logEval f oa; (g p.1, p.2) := by
@@ -909,6 +993,8 @@ theorem logEval_map (f : OracleFn M S C) (g : α → β)
   | mk a log =>
       simp [map_eq_bind_pure_comp, logEval_bind, logEval_pure, h]
 
+/-- Exact trace of recomputing one opening: first the leaf query, then the
+`depth` internal-node queries from bottom to top. -/
 theorem logEval_recomputeRootSingle (f : OracleFn M S C) {depth : ℕ}
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
     logEval f (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath) =
@@ -923,6 +1009,8 @@ theorem logEval_recomputeRootSingle (f : OracleFn M S C) {depth : ℕ}
   rw [logEval_bind, logEval_query]
   rfl
 
+/-- Exact trace of `checkSingle`: it performs the same queries as
+`recomputeRootSingle` and then compares the recomputed root to the commitment. -/
 theorem logEval_checkSingle [DecidableEq C] (f : OracleFn M S C) {depth : ℕ}
     (commitment : C) (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
     logEval f (checkSingle (M := M) (S := S) (C := C) commitment idx message authPath) =
@@ -933,6 +1021,7 @@ theorem logEval_checkSingle [DecidableEq C] (f : OracleFn M S C) {depth : ℕ}
     logEval_map (M := M) (S := S) (C := C) f (BEq.beq commitment)
       (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath)
 
+/-- The leaf query for a single opening is always present in its verifier log. -/
 theorem checkLeafQuery_mem_logEval_checkSingle [DecidableEq C] (f : OracleFn M S C) {depth : ℕ}
     (commitment : C) (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
     ⟨checkLeafQuery (M := M) (S := S) (C := C) message authPath,
@@ -942,6 +1031,8 @@ theorem checkLeafQuery_mem_logEval_checkSingle [DecidableEq C] (f : OracleFn M S
   rw [logEval_checkSingle]
   simp [logEval_recomputeRootSingle]
 
+/-- The verifier log contains the internal-node query for every non-root layer
+of the checked path. -/
 theorem checkInternalQuery_mem_logEval_checkSingle [DecidableEq C] (f : OracleFn M S C)
     {depth : ℕ} (commitment : C) (idx : Index depth) (message : M)
     (authPath : AuthPath S C depth) (layer : Fin depth) :
@@ -965,6 +1056,8 @@ theorem checkInternalQuery_mem_logEval_checkSingle [DecidableEq C] (f : OracleFn
     exact hmem
   simp [logEval_checkSingle, logEval_recomputeRootSingle, hmem']
 
+/-- A single-check verifier log consists exactly of the leaf query plus the
+`depth` internal queries along the opened path. -/
 theorem mem_logEval_checkSingle_iff_leaf_or_internal [DecidableEq C]
     (f : OracleFn M S C) {depth : ℕ} (commitment : C) (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth)
@@ -1043,6 +1136,9 @@ theorem mem_logEval_checkSingle_iff_leaf_or_internal [DecidableEq C]
         exact hlayer
       exact htail
 
+/-- Batch-check containment for the list evaluator: the verifier log of any
+constituent single check is contained in the log of `checkEntriesAux` over a
+list containing that index. -/
 theorem logContains_checkSingle_checkEntriesAux [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) {I : IndexSet depth} (commitment : C)
     (message : Subvector M I) (proof : Proof S C I) :
@@ -1075,6 +1171,8 @@ theorem logContains_checkSingle_checkEntriesAux [DecidableEq C] {depth : ℕ}
               ((List.mem_cons.1 hi).resolve_left hij))
             (LogContains.append_right _ _)
 
+/-- Batch-check containment for public `check`: every requested single-check
+trace is contained in the full batch verifier trace. -/
 theorem logContains_checkSingle_check [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C) (I : IndexSet depth)
     (message : Subvector M I) (proof : Proof S C I) (i : {j // j ∈ I}) :

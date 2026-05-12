@@ -11,7 +11,15 @@ import Examples.MerkleCommitmentScheme.Completeness
 # Merkle Commitment Scheme — Collision Lemmas
 
 This module collects the deterministic collision lemmas used by the textbook
-binding and extractability arguments.
+binding and extractability arguments. The central result is the single-path
+theorem `checkSingle_crossLogCollision`: if two accepted openings for the same
+root and leaf differ, then the two verifier traces contain a random-oracle
+collision. The batch theorem `check_crossLogCollision` reduces batch openings
+to that selected leaf and lifts the collision through log containment.
+
+These are fixed-oracle facts. Probability files later turn the resulting
+cross-log collision events into ROM bounds using the generic basic commitment
+support.
 -/
 
 open OracleComp OracleSpec
@@ -32,6 +40,8 @@ def SameIndexSetDifferentProof {depth : ℕ} {I₀ I₁ : IndexSet depth}
     (proof₀ : Proof S C I₀) (proof₁ : Proof S C I₁) : Prop :=
   ∃ h : I₀ = I₁, Proof.cast (S := S) (C := C) h proof₀ ≠ proof₁
 
+/-- Function extensionality for proof families over one index set: two proof
+families differ exactly when they differ at a concrete requested index. -/
 theorem proof_ne_iff_exists_point {depth : ℕ} {I : IndexSet depth}
     (proof₀ proof₁ : Proof S C I) :
     proof₀ ≠ proof₁ ↔ ∃ i, proof₀ i ≠ proof₁ i := by
@@ -45,6 +55,10 @@ theorem proof_ne_iff_exists_point {depth : ℕ} {I : IndexSet depth}
   · rintro ⟨i, hi⟩ hEq
     exact hi (congrArg (fun p => p i) hEq)
 
+/-- Extract a concrete index witnessing `SameIndexSetDifferentProof`.
+
+The batch collision theorem uses this to reduce "same index set but different
+proof family" to a single accepted `checkSingle` comparison. -/
 theorem sameIndexSetDifferentProof_witness {depth : ℕ} {I₀ I₁ : IndexSet depth}
     {proof₀ : Proof S C I₀} {proof₁ : Proof S C I₁}
     (h : SameIndexSetDifferentProof (S := S) (C := C) proof₀ proof₁) :
@@ -54,12 +68,16 @@ theorem sameIndexSetDifferentProof_witness {depth : ℕ} {I₀ I₁ : IndexSet d
   exact (proof_ne_iff_exists_point (S := S) (C := C)
     (Proof.cast (S := S) (C := C) hEq proof₀) proof₁).mp hne
 
+/-- Helper for batch acceptance: if `List.all id` is true, every listed Boolean
+is true. -/
 private theorem list_all_true_of_mem {xs : List Bool} {b : Bool}
     (h : xs.all (fun x => x) = true) (hb : b ∈ xs) : b = true := by
   have hfalse : false ∉ xs := by
     simpa using h
   cases b <;> simp [hfalse] at hb ⊢
 
+/-- Fixed-oracle evaluation of `checkEntriesAux` is pointwise evaluation of the
+corresponding `checkSingle` computations over the supplied attached indices. -/
 private theorem checkEntriesAux_eval_eq_map [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) {I : IndexSet depth} (commitment : C)
     (message : Subvector M I) (proof : Proof S C I) :
@@ -75,6 +93,12 @@ private theorem checkEntriesAux_eval_eq_map [DecidableEq C] {depth : ℕ}
         checkEntriesAux_eval_eq_map f commitment message proof xs]
       simp
 
+/-- Accepted batch verification implies accepted verification at every
+requested leaf.
+
+This is the deterministic reduction used by both batch collision and
+extractability: once `check` returns true, each constituent `checkSingle`
+returns true under the same fixed oracle. -/
 theorem check_eval_eq_true_implies_single [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C) (I : IndexSet depth)
     (message : Subvector M I) (proof : Proof S C I) (i : {j // j ∈ I})
@@ -100,6 +124,14 @@ theorem check_eval_eq_true_implies_single [DecidableEq C] {depth : ℕ}
     exact Finset.mem_toList.mpr (Finset.mem_attach I i)
   exact list_all_true_of_mem hcheck hmem
 
+/-
+The next small vector/authentication-path helpers support the recursive
+single-path collision proof. They are not cryptographic statements; they let
+the proof peel one sibling from the bottom-up authentication path and recurse
+on the remaining path.
+-/
+
+/-- `Vector.tail` at position `i` is the original vector at position `i + 1`. -/
 private theorem vector_tail_get {α : Type} {n : ℕ} (v : Vector α (n + 1)) (i : Fin n) :
     v.tail.get i = v.get i.succ := by
   have hsize : (v.toArray.extract 1 (n + 1)).size = n := by
@@ -110,6 +142,7 @@ private theorem vector_tail_get {α : Type} {n : ℕ} (v : Vector α (n + 1)) (i
   · rw [Vector.getElem_toArray, Vector.getElem_toArray]
     simp [Nat.add_comm]
 
+/-- A nonempty vector is determined by its head and tail. -/
 private theorem vector_eq_of_head_tail_eq {n : ℕ} {v₀ v₁ : Vector C (n + 1)}
     (hhead : v₀.head = v₁.head) (htail : v₀.tail = v₁.tail) :
     v₀ = v₁ := by
@@ -124,11 +157,13 @@ private theorem vector_eq_of_head_tail_eq {n : ℕ} {v₀ v₁ : Vector C (n + 1
         exact congrArg (fun t => t[j]) htail
       simpa [Nat.add_comm] using htailGet
 
+/-- All length-zero vectors are equal. -/
 private theorem vector_zero_eq (v₀ v₁ : Vector C 0) : v₀ = v₁ := by
   apply Vector.ext
   intro i hi
   omega
 
+/-- An authentication path is determined by its salt and sibling vector. -/
 private theorem authPath_eq_of_salt_siblings_eq {depth : ℕ}
     {authPath₀ authPath₁ : AuthPath S C depth}
     (hsalt : authPath₀.salt = authPath₁.salt)
@@ -140,6 +175,7 @@ private theorem authPath_eq_of_salt_siblings_eq {depth : ℕ}
   cases hsiblings
   rfl
 
+/-- Equal leaf-query inputs force equal message and salt components. -/
 private theorem leafQuery_eq_implies_message_salt_eq {depth : ℕ}
     {message₀ message₁ : M} {authPath₀ authPath₁ : AuthPath S C depth}
     (h :
@@ -151,6 +187,14 @@ private theorem leafQuery_eq_implies_message_salt_eq {depth : ℕ}
   simp [checkLeafQuery] at h
   simpa using h
 
+/-
+The next block normalizes the first internal query made by
+`recomputeRootAux`. For an even local index the current path label is the left
+child; for an odd local index it is the right child. Keeping the even/odd forms
+explicit avoids dependent-range equalities in the first-differing-layer proof.
+-/
+
+/-- Concrete first internal query of `recomputeRootAux` before the parity split. -/
 private def recomputeRootAuxFirstQuery {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1)) :
     (Oracle M S C).Domain :=
@@ -159,12 +203,14 @@ private def recomputeRootAuxFirstQuery {depth : ℕ}
   else
     Sum.inr (siblings.head, current)
 
+/-- Logging a node commitment records exactly one internal-node query. -/
 private theorem logEval_nodeCommit (f : OracleFn M S C) (left right : C) :
     logEval f (nodeCommit (C := C) left right : OracleComp (Oracle M S C) C) =
       (f (Sum.inr (left, right)), [⟨Sum.inr (left, right), f (Sum.inr (left, right))⟩]) := by
   change logEval f (liftM (query (spec := Oracle M S C) (Sum.inr (left, right)))) = _
   rw [logEval_query]
 
+/-- One logged `recomputeRootAux` step when the path node is the left child. -/
 private theorem logEval_recomputeRootAux_step_even (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 0) :
@@ -175,6 +221,7 @@ private theorem logEval_recomputeRootAux_step_even (f : OracleFn M S C) {depth :
       (rest.1, [⟨Sum.inr (current, siblings.head), parent⟩] ++ rest.2) := by
   rw [recomputeRootAux, if_pos hparity, logEval_bind, logEval_nodeCommit]
 
+/-- One logged `recomputeRootAux` step when the path node is the right child. -/
 private theorem logEval_recomputeRootAux_step_odd (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 1) :
@@ -186,6 +233,7 @@ private theorem logEval_recomputeRootAux_step_odd (f : OracleFn M S C) {depth : 
   have hne : ¬ idx.1 % 2 = 0 := by omega
   rw [recomputeRootAux, if_neg hne, logEval_bind, logEval_nodeCommit]
 
+/-- Evaluation-only version of the even first-step normalization. -/
 private theorem eval_recomputeRootAux_step_even (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 0) :
@@ -195,6 +243,7 @@ private theorem eval_recomputeRootAux_step_even (f : OracleFn M S C) {depth : �
           (parentPos idx) (f (Sum.inr (current, siblings.head))) siblings.tail) := by
   rw [recomputeRootAux, if_pos hparity, eval_bind, eval_nodeCommit]
 
+/-- Evaluation-only version of the odd first-step normalization. -/
 private theorem eval_recomputeRootAux_step_odd (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 1) :
@@ -205,6 +254,7 @@ private theorem eval_recomputeRootAux_step_odd (f : OracleFn M S C) {depth : ℕ
   have hne : ¬ idx.1 % 2 = 0 := by omega
   rw [recomputeRootAux, if_neg hne, eval_bind, eval_nodeCommit]
 
+/-- The even first-step internal query appears in the `recomputeRootAux` log. -/
 private theorem recomputeRootAuxFirstEntry_mem_logEval_even (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 0) :
@@ -213,6 +263,7 @@ private theorem recomputeRootAuxFirstEntry_mem_logEval_even (f : OracleFn M S C)
   rw [logEval_recomputeRootAux_step_even (M := M) (S := S) (C := C) f idx current siblings hparity]
   simp
 
+/-- The odd first-step internal query appears in the `recomputeRootAux` log. -/
 private theorem recomputeRootAuxFirstEntry_mem_logEval_odd (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 1) :
@@ -221,6 +272,7 @@ private theorem recomputeRootAuxFirstEntry_mem_logEval_odd (f : OracleFn M S C) 
   rw [logEval_recomputeRootAux_step_odd (M := M) (S := S) (C := C) f idx current siblings hparity]
   simp
 
+/-- The tail recursive log is contained in the full even-step log. -/
 private theorem logContains_recomputeRootAux_tail_even (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 0) :
@@ -233,6 +285,7 @@ private theorem logContains_recomputeRootAux_tail_even (f : OracleFn M S C) {dep
   rw [logEval_recomputeRootAux_step_even (M := M) (S := S) (C := C) f idx current siblings hparity]
   exact LogContains.append_right _ _
 
+/-- The tail recursive log is contained in the full odd-step log. -/
 private theorem logContains_recomputeRootAux_tail_odd (f : OracleFn M S C) {depth : ℕ}
     (idx : Index (depth + 1)) (current : C) (siblings : Vector C (depth + 1))
     (hparity : idx.1 % 2 = 1) :
@@ -245,6 +298,7 @@ private theorem logContains_recomputeRootAux_tail_odd (f : OracleFn M S C) {dept
   rw [logEval_recomputeRootAux_step_odd (M := M) (S := S) (C := C) f idx current siblings hparity]
   exact LogContains.append_right _ _
 
+/-- The leaf query is the first entry in the `recomputeRootSingle` log. -/
 private theorem checkLeafQuery_mem_logEval_recomputeRootSingle (f : OracleFn M S C) {depth : ℕ}
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
     ⟨checkLeafQuery (M := M) (S := S) (C := C) message authPath,
@@ -254,6 +308,8 @@ private theorem checkLeafQuery_mem_logEval_recomputeRootSingle (f : OracleFn M S
   rw [logEval_recomputeRootSingle]
   simp
 
+/-- The internal recomputation log is contained in the full single-root
+recomputation log, after the leaf query. -/
 private theorem logContains_recomputeRootAux_recomputeRootSingle (f : OracleFn M S C) {depth : ℕ}
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
     LogContains
@@ -266,6 +322,14 @@ private theorem logContains_recomputeRootAux_recomputeRootSingle (f : OracleFn M
   rw [logEval_recomputeRootSingle]
   exact LogContains.append_right _ _
 
+/-- Recursive first-differing-layer collision theorem for internal path
+recomputation.
+
+If two bottom-up recomputations for the same index produce the same root but
+start from different current labels or different sibling vectors, then their
+internal-query logs contain a cross-log collision. The proof peels one sibling
+at a time: a differing first query with equal answer is the collision; otherwise
+the disagreement is pushed to the parent-label/tail-sibling recursion. -/
 private theorem recomputeRootAux_crossLogCollision :
     {depth : ℕ} →
     (f : OracleFn M S C) →
@@ -365,7 +429,14 @@ private theorem recomputeRootAux_crossLogCollision :
               (logContains_recomputeRootAux_tail_odd (M := M) (S := S) (C := C) f idx current₁ siblings₁ hparity)
               hrec
 
-/-- Textbook single-index collision lemma. -/
+/-- Textbook single-index collision lemma.
+
+If two accepted openings for the same commitment and leaf index differ in the
+message or authentication path, then the two selected verifier traces contain a
+cross-log collision. This is the deterministic core behind Merkle binding:
+probability files later bound the chance that such a collision appears in the
+ROM.
+-/
 theorem checkSingle_crossLogCollision [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C) (idx : Index depth)
     (message₀ message₁ : M) (authPath₀ authPath₁ : AuthPath S C depth)
@@ -467,7 +538,12 @@ theorem checkSingle_crossLogCollision [DecidableEq C] {depth : ℕ}
           hcolAux
       simpa [logEval_checkSingle] using hcolRoot
 
-/-- Textbook batch collision lemma. -/
+/-- Textbook batch collision lemma.
+
+Accepted batch openings that either disagree on a shared opened value or carry
+different proof families over the same index set reduce to the single-index
+collision theorem at a concrete witness leaf. The final collision is lifted
+from the selected `checkSingle` logs into the full batch-check logs. -/
 theorem check_crossLogCollision [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C)
     (I₀ I₁ : IndexSet depth) (message₀ : Subvector M I₀) (message₁ : Subvector M I₁)

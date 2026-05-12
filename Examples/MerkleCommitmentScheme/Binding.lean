@@ -40,5 +40,7 @@ Scope note: the textbook split is expressed separately by
 `t * (t - 1) / (2 * |C|) + (d + 1)^2 / |C|`. The compact textbook macro is
 `MTBindingExpression(λ, q) = 1/2 * q^2 / 2^λ`, recovered by
 `MerkleTree.binding_bound_textbook_conditioned` as
-`MerkleTree.bindingTextbookErrorTerm C q` when `q >= 2(d + 1)^2`.
+`MerkleTree.bindingTextbookErrorTerm C q` under the named dominance condition
+`MerkleTree.bindingTextbookDominanceThreshold d ≤ q`, i.e.
+`q >= 2(d + 1)^2`.
 -/

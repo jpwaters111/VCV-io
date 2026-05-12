@@ -23,7 +23,7 @@ import Examples.FrankingProtocol
 import Examples.MerkleCommitmentScheme
 import Examples.MerkleCommitmentScheme.Binding
 import Examples.MerkleCommitmentScheme.Collision
-import Examples.MerkleCommitmentScheme.Common
+import Examples.MerkleCommitmentScheme.Scheme
 import Examples.MerkleCommitmentScheme.Completeness
 import Examples.MerkleCommitmentScheme.Extractability
 import Examples.MerkleCommitmentScheme.MultiExtractability

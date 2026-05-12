@@ -938,12 +938,12 @@ private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
         FreshTraceKnownLabelHit (M := M) (S := S) (C := C)
           commitment commitTrace cache₁ z |
         (simulateQ cachingOracle rest).run cache₁] ≤
-        ((((A.t₂ + (depth + 1)) * targets.card : ℕ) : ℝ≥0∞) *
+        (((extractabilityPostCommitQueryCount depth A.t₂ * targets.card : ℕ) : ℝ≥0∞) *
           (Fintype.card C : ℝ≥0∞)⁻¹) := by
     simpa [FreshTraceKnownLabelHit, targets, rest] using
       probEvent_merkle_cache_has_value_mem_finset_le
         (M := M) (S := S) (C := C)
-        (oa := rest) (n := A.t₂ + (depth + 1))
+        (oa := rest) (n := extractabilityPostCommitQueryCount depth A.t₂)
         (extractabilityWitnessRest_totalBound
           (M := M) (S := S) (C := C)
           A commitment aux commitTrace)
@@ -960,14 +960,13 @@ private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
             FreshTraceKnownLabelHit (M := M) (S := S) (C := C)
               commitment commitTrace cache₁ z |
             (simulateQ cachingOracle rest).run cache₁] := hbad_le
-    _ ≤ ((((A.t₂ + (depth + 1)) * targets.card : ℕ) : ℝ≥0∞) *
+    _ ≤ (((extractabilityPostCommitQueryCount depth A.t₂ * targets.card : ℕ) : ℝ≥0∞) *
           (Fintype.card C : ℝ≥0∞)⁻¹) := hfresh
     _ ≤ extractabilityFreshHitTerm C depth A.t₁ A.t₂ := by
         have hnat :
-            (A.t₂ + (depth + 1)) * targets.card ≤
-              (A.t₂ + depth + 1) * extractabilityCountingTerm depth A.t₁ := by
-          have hsum : A.t₂ + (depth + 1) = A.t₂ + depth + 1 := by omega
-          rw [hsum]
+            extractabilityPostCommitQueryCount depth A.t₂ * targets.card ≤
+              extractabilityPostCommitQueryCount depth A.t₂ *
+                extractabilityCountingTerm depth A.t₁ := by
           exact Nat.mul_le_mul_left _ htargets
         unfold extractabilityFreshHitTerm
         gcongr

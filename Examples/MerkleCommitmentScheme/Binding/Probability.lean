@@ -326,7 +326,7 @@ private theorem secondVerifierFreshHit_bound_of_first_log
           gcongr
     _ = bindingVerifierErrorTerm C depth := by
           simp [bindingVerifierErrorTerm, Nat.pow_two, ENNReal.div_eq_inv_mul,
-            mul_comm]
+            bindingVerifierPathQueryCount, mul_comm]
 
 /-- Conditional bound for the second selected verifier path after the first
 path has been logged.
@@ -974,7 +974,7 @@ theorem binding_bound_wholeCache {depth t : ℕ}
     probEvent_cacheCollision_le_birthday_total
       (spec := Oracle M S C)
       (oa := bindingWitnessInner (M := M) (S := S) (C := C) A)
-      (t + 2 * (depth + 1))
+      (t + bindingWitnessVerifierQueryCount depth)
       (bindingWitnessInner_totalQueryBound (M := M) (S := S) (C := C) A)
       hCdefault
       (merkleOracleRange_card_le (M := M) (S := S) (C := C))
@@ -988,6 +988,7 @@ theorem binding_bound_wholeCache {depth t : ℕ}
               (M := M) (S := S) (C := C) A hz hwin
     _ ≤ bindingWitnessErrorTerm C depth t := by
           simpa [bindingWitnessGame, BindingWitnessBadEventROM, bindingWitnessErrorTerm,
+            bindingWitnessVerifierQueryCount, bindingVerifierPathQueryCount,
             merkleOracleRange_card_eq (M := M) (S := S) (C := C) default] using hbirthday
 
 /-- Generic two-phase combiner for the ordinary witness game.
@@ -1219,14 +1220,16 @@ theorem binding_bound_of_witnessGame_bound {depth t : ℕ}
 /-- Compact textbook-expression wrapper for the ordinary witness game.
 
 If the ordinary witness game has already been bounded by `bindingErrorTerm`,
-then the arithmetic condition `2 * (depth + 1)^2 ≤ t` gives the documented
-`t^2 / (2 * |C|)` expression. -/
+then the named dominance condition
+`bindingTextbookDominanceThreshold depth ≤ t` gives the documented
+`t^2 / (2 * |C|)` expression. Expanded, the condition is
+`2 * (depth + 1)^2 ≤ t`. -/
 theorem binding_bound_textbook_of_witnessGame_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
     [Inhabited M] [Inhabited S] [Inhabited C]
     (A : BindingAdversary M S C depth t)
-    (hlarge : 2 * (depth + 1) ^ 2 ≤ t)
+    (hbudget : bindingTextbookDominanceThreshold depth ≤ t)
     (hbound :
       Pr[ fun z => BindingWitnessWinROM (M := M) (S := S) (C := C) z |
         bindingWitnessGame (M := M) (S := S) (C := C) A] ≤
@@ -1236,7 +1239,7 @@ theorem binding_bound_textbook_of_witnessGame_bound {depth t : ℕ}
       bindingTextbookErrorTerm C t :=
   le_trans
     (binding_bound_of_witnessGame_bound (M := M) (S := S) (C := C) A hbound)
-    (bindingErrorTerm_le_textbook (C := C) (depth := depth) (t := t) hlarge)
+    (bindingErrorTerm_le_textbook (C := C) depth t hbudget)
 
 /-- Textbook split ROM binding bound for the origin-aware witness game.
 
@@ -1279,6 +1282,7 @@ cross term.
 Lean event/game: same conditioned event as `binding_bound_conditioned`.
 
 Bound expression: `bindingTextbookErrorTerm C t = t^2 / (2 * |C|)` under
+`bindingTextbookDominanceThreshold depth <= t`, i.e.
 `2 * (depth + 1)^2 <= t`. In textbook notation this is
 `MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`. -/
 theorem binding_bound_textbook_conditioned {depth t : ℕ}
@@ -1287,13 +1291,13 @@ theorem binding_bound_textbook_conditioned {depth t : ℕ}
     [Inhabited M] [Inhabited S] [Inhabited C]
     (A : BindingAdversary M S C depth t)
     (hC : 0 < Fintype.card C)
-    (hlarge : 2 * (depth + 1) ^ 2 ≤ t) :
+    (hbudget : bindingTextbookDominanceThreshold depth ≤ t) :
     Pr[fun z => BindingTextbookWinROM (M := M) (S := S) (C := C) z |
       bindingTextbookWitnessGame (M := M) (S := S) (C := C) A] ≤
       bindingTextbookErrorTerm C t :=
   le_trans
     (binding_bound_conditioned (M := M) (S := S) (C := C) A hC)
-    (bindingErrorTerm_le_textbook (C := C) (depth := depth) (t := t) hlarge)
+    (bindingErrorTerm_le_textbook (C := C) depth t hbudget)
 
 /-- Public unconditional ROM binding bound for the ordinary witness game.
 

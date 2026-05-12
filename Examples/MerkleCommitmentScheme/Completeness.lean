@@ -11,6 +11,19 @@ import Mathlib.Data.Array.Extract
 # Merkle Commitment Scheme — Completeness
 
 Fixed-oracle completeness for the `MerkleTree` construction.
+
+This file proves the deterministic theorem chain used before any probability
+reasoning:
+
+* the executable oracle computations agree with the functional
+  `WithHash` shadows under a fixed oracle `f`;
+* an honest `openSingle` path recomputes the root stored by `buildTree`;
+* if every selected single opening verifies, then the batch verifier accepts;
+* therefore `commitWithSalts`, `open`, and `check` compose correctly for every
+  fixed oracle.
+
+There are no security bounds here. These lemmas justify the honest branch used
+by binding and extractability games.
 -/
 
 open OracleComp OracleSpec
@@ -19,6 +32,15 @@ namespace MerkleTree
 
 variable {M S C α : Type}
 
+/-
+Simulation lemmas: replace each executable `OracleComp` Merkle algorithm by its
+pure functional shadow after fixing the oracle function `f`. This lets the
+main completeness proof reason about vectors and labels instead of monadic
+binds.
+-/
+
+/-- Tail indexing for the vector recursion used by `mapFinM` and
+`openSiblings`. -/
 private theorem vector_tail_get {α : Type} {n : ℕ} (v : Vector α (n + 1)) (i : Fin n) :
     v.tail.get i = v.get i.succ := by
   have hsize : (v.toArray.extract 1 (n + 1)).size = n := by
@@ -29,6 +51,7 @@ private theorem vector_tail_get {α : Type} {n : ℕ} (v : Vector α (n + 1)) (i
   · rw [Vector.getElem_toArray, Vector.getElem_toArray]
     simp [Nat.add_comm]
 
+/-- Fixed-oracle simulation of proof-oriented indexed vector traversal. -/
 private theorem simulate_mapFinM_eq {ι : Type} {spec : OracleSpec ι}
     (impl : QueryImpl spec Id) :
     {n : ℕ} → (f : Fin n → OracleComp spec α) →
@@ -60,6 +83,7 @@ private theorem simulate_mapFinM_eq {ι : Type} {spec : OracleSpec ι}
       | succ j =>
           simp [Id.run, Id.instMonad, Functor.map, Vector.getElem_ofFn]
 
+/-- `buildLeafLayer` under oracle `f` is the pure leaf-hash layer. -/
 private theorem simulate_buildLeafLayer_eq (f : OracleFn M S C) :
     {depth : ℕ} → (messages : Leaves M depth) → (salts : Leaves S depth) →
       eval f (buildLeafLayer (M := M) (S := S) (C := C) messages salts) =
@@ -70,6 +94,7 @@ private theorem simulate_buildLeafLayer_eq (f : OracleFn M S C) :
           (f := fun i =>
             leafCommit (M := M) (S := S) (C := C) (messages.get i) (salts.get i))
 
+/-- `buildLayer` under oracle `f` is the pure internal-node hash layer. -/
 private theorem simulate_buildLayer_eq (f : OracleFn M S C) :
     {depth : ℕ} → (children : LayerVector C (depth + 1)) →
       eval f (buildLayer (M := M) (S := S) (C := C) children) =
@@ -82,6 +107,7 @@ private theorem simulate_buildLayer_eq (f : OracleFn M S C) :
               (children.get (leftChildPos i))
               (children.get (rightChildPos i)))
 
+/-- `buildLabels` under oracle `f` is the pure bottom-up label tree. -/
 private theorem simulate_buildLabels_eq (f : OracleFn M S C) :
     {depth : ℕ} → (leaves : LayerVector C depth) →
       eval f (buildLabels (M := M) (S := S) (C := C) leaves) =
@@ -92,6 +118,8 @@ private theorem simulate_buildLabels_eq (f : OracleFn M S C) :
       simp [buildLabels, buildLabelsWithHash, eval_bind,
         simulate_buildLayer_eq, simulate_buildLabels_eq]
 
+/-- `buildTree` under oracle `f` is the pure tree built from leaf and node
+hashes derived from `f`. -/
 private theorem simulate_buildTree_eq (f : OracleFn M S C) :
     {depth : ℕ} → (messages : Leaves M depth) → (salts : Leaves S depth) →
       eval f (buildTree (M := M) (S := S) (C := C) messages salts) =
@@ -100,6 +128,8 @@ private theorem simulate_buildTree_eq (f : OracleFn M S C) :
       simp [buildTree, buildTreeWithHash, eval_bind,
         simulate_buildLeafLayer_eq, simulate_buildLabels_eq]
 
+/-- `recomputeRootAux` under oracle `f` is the pure bottom-up recomputation
+using the internal-node hash derived from `f`. -/
 private theorem simulate_recomputeRootAux_eq (f : OracleFn M S C) :
     {depth : ℕ} → (idx : Index depth) → (current : C) → (siblings : Vector C depth) →
       eval f (recomputeRootAux (M := M) (S := S) (C := C) idx current siblings) =
@@ -113,6 +143,8 @@ private theorem simulate_recomputeRootAux_eq (f : OracleFn M S C) :
       · simp [recomputeRootAux, recomputeRootAuxWithHash, eval_bind,
           hparity, simulate_recomputeRootAux_eq]
 
+/-- `recomputeRootSingle` under oracle `f` is the pure leaf-plus-path
+recomputation. -/
 private theorem simulate_recomputeRootSingle_eq (f : OracleFn M S C) :
     {depth : ℕ} → (idx : Index depth) → (message : M) → (authPath : AuthPath S C depth) →
       eval f (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath) =
@@ -124,11 +156,19 @@ private theorem simulate_recomputeRootSingle_eq (f : OracleFn M S C) :
       rw [recomputeRootSingle, eval_bind]
       simp [recomputeRootSingleWithHash, simulate_recomputeRootAux_eq]
 
+/-
+Functional path correctness. `openSiblings` returns siblings from leaf to root,
+which is exactly the order consumed by `recomputeRootAuxWithHash`.
+-/
+
+/-- The first opened sibling is the sibling of the leaf-level index. -/
 private theorem openSiblings_head_eq {depth : ℕ} (nodeHash : C × C → C)
     (leaves : LayerVector C (depth + 1)) (idx : Index (depth + 1)) :
     (openSiblings (buildLabelsWithHash nodeHash leaves) idx).head = leaves.get (siblingIndex idx) := by
   simp [openSiblings, buildLabelsWithHash, Vector.head]
 
+/-- After removing the first sibling, the remaining path is the parent path in
+the parent label tree. -/
 private theorem openSiblings_tail_eq {depth : ℕ} (nodeHash : C × C → C)
     (leaves : LayerVector C (depth + 1)) (idx : Index (depth + 1)) :
     Vector.cast (by omega) ((openSiblings (buildLabelsWithHash nodeHash leaves) idx).extract 1) =
@@ -144,6 +184,10 @@ private theorem openSiblings_tail_eq {depth : ℕ} (nodeHash : C × C → C)
   rw [vector_tail_get]
   simp [openSiblings, buildLabelsWithHash]
 
+/-- Pure functional correctness of Merkle authentication paths.
+
+Starting at a leaf label and consuming the siblings returned by `openSiblings`
+reconstructs the root of the labels tree. -/
 private theorem recomputeRootAuxWithHash_buildLabels_eq (nodeHash : C × C → C) :
     {depth : ℕ} → (leaves : LayerVector C depth) → (idx : Index depth) →
       recomputeRootAuxWithHash nodeHash idx (leaves.get idx)
@@ -196,6 +240,8 @@ private theorem recomputeRootAuxWithHash_buildLabels_eq (nodeHash : C × C → C
         simpa [parents] using
           recomputeRootAuxWithHash_buildLabels_eq nodeHash parents (parentPos idx)
 
+/-- Fixed-oracle simulation of honest deterministic commitment with supplied
+salts. -/
 private theorem simulate_commitWithSalts_eq (f : OracleFn M S C) {depth : ℕ}
     (messages : Leaves M depth) (salts : Leaves S depth) :
     eval f (commitWithSalts (M := M) (S := S) (C := C) messages salts) =
@@ -206,6 +252,10 @@ private theorem simulate_commitWithSalts_eq (f : OracleFn M S C) {depth : ℕ}
       (labels.root, ⟨salts, labels⟩) := by
   simp [commitWithSalts, eval_bind, eval_pure, simulate_buildTree_eq]
 
+/-- Pure honest single-opening completeness.
+
+For the functional `WithHash` tree, opening one leaf and recomputing its root
+returns exactly the tree root. -/
 theorem recomputeRootSingleWithHash_openSingle_eq_root {depth : ℕ}
     (leafHash : M × S → C) (nodeHash : C × C → C)
     (messages : Leaves M depth) (salts : Leaves S depth) (idx : Index depth) :
@@ -216,6 +266,8 @@ theorem recomputeRootSingleWithHash_openSingle_eq_root {depth : ℕ}
     recomputeRootAuxWithHash_buildLabels_eq (C := C) nodeHash
       (buildLeafLayerWithHash leafHash messages salts) idx
 
+/-- Fixed-oracle honest single-opening completeness for the executable
+recomputation. -/
 theorem recomputeRootSingle_openSingle_eq_root {depth : ℕ} (f : OracleFn M S C)
     (messages : Leaves M depth) (salts : Leaves S depth) (idx : Index depth) :
     let labels := eval f (buildTree (M := M) (S := S) (C := C) messages salts)
@@ -231,6 +283,7 @@ theorem recomputeRootSingle_openSingle_eq_root {depth : ℕ} (f : OracleFn M S C
       (fun x => f (Sum.inr x))
       messages salts idx
 
+/-- Honest `openSingle` is accepted by `checkSingle` under any fixed oracle. -/
 theorem checkSingle_openSingle_eq_true [DecidableEq C] {depth : ℕ} (f : OracleFn M S C)
     (messages : Leaves M depth) (salts : Leaves S depth) (idx : Index depth) :
     let labels := eval f (buildTree (M := M) (S := S) (C := C) messages salts)
@@ -241,6 +294,8 @@ theorem checkSingle_openSingle_eq_true [DecidableEq C] {depth : ℕ} (f : Oracle
   simpa using
     recomputeRootSingle_openSingle_eq_root (M := M) (S := S) (C := C) f messages salts idx
 
+/-- If every listed single check accepts, the auxiliary batch checker returns
+a list of `true` values of the same length. -/
 theorem checkEntriesAux_eq_replicate_true_of_all_single [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) {I : IndexSet depth} (commitment : C)
     (message : Subvector M I) (proof : Proof S C I) :
@@ -268,6 +323,8 @@ theorem checkEntriesAux_eq_replicate_true_of_all_single [DecidableEq C] {depth :
       rw [hrest]
       simp [List.replicate]
 
+/-- If every selected single check accepts, `checkEntries` returns
+`I.card` copies of `true`. -/
 theorem checkEntries_eq_replicate_true_of_all_single [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C) (I : IndexSet depth)
     (message : Subvector M I) (proof : Proof S C I)
@@ -282,6 +339,7 @@ theorem checkEntries_eq_replicate_true_of_all_single [DecidableEq C] {depth : �
       f commitment message proof I.attach.toList
       (fun i _ => hsingle i)
 
+/-- If every selected single check accepts, the public batch verifier accepts. -/
 theorem check_eq_true_of_all_single [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C) (I : IndexSet depth)
     (message : Subvector M I) (proof : Proof S C I)
@@ -294,6 +352,8 @@ theorem check_eq_true_of_all_single [DecidableEq C] {depth : ℕ}
     f commitment I message proof hsingle]
   simp
 
+/-- Honest batch openings make the auxiliary checker return all true values for
+any supplied list of requested indices. -/
 theorem checkEntriesAux_open_eq_replicate_true [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (messages : Leaves M depth) (salts : Leaves S depth)
     {I : IndexSet depth} :
@@ -310,6 +370,7 @@ theorem checkEntriesAux_open_eq_replicate_true [DecidableEq C] {depth : ℕ}
       simpa [Subvector.ofVector, «open»] using
         checkSingle_openSingle_eq_true (M := M) (S := S) (C := C) f messages salts i.1
 
+/-- Honest batch openings make `checkEntries` return all true values. -/
 theorem checkEntries_open_eq_replicate_true [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (messages : Leaves M depth) (salts : Leaves S depth)
     (I : IndexSet depth) :
@@ -323,6 +384,8 @@ theorem checkEntries_open_eq_replicate_true [DecidableEq C] {depth : ℕ}
     checkEntriesAux_open_eq_replicate_true (M := M) (S := S) (C := C)
       f messages salts (I := I) I.attach.toList
 
+/-- Honest batch openings are accepted by the public verifier under any fixed
+oracle. -/
 theorem check_open_eq_true [DecidableEq C] {depth : ℕ} (f : OracleFn M S C)
     (messages : Leaves M depth) (salts : Leaves S depth) (I : IndexSet depth) :
     let labels := eval f (buildTree (M := M) (S := S) (C := C) messages salts)
@@ -334,6 +397,10 @@ theorem check_open_eq_true [DecidableEq C] {depth : ℕ} (f : OracleFn M S C)
   rw [checkEntries_open_eq_replicate_true (M := M) (S := S) (C := C) f messages salts I]
   simp
 
+/-- End-to-end deterministic completeness for `commitWithSalts`.
+
+Building a commitment/trapdoor with supplied salts, opening any fixed index set,
+and checking that opening under the same fixed oracle returns `true`. -/
 theorem commitWithSalts_complete [DecidableEq C] {depth : ℕ} (f : OracleFn M S C)
     (messages : Leaves M depth) (salts : Leaves S depth) (I : IndexSet depth) :
     let out := eval f (commitWithSalts (M := M) (S := S) (C := C) messages salts)

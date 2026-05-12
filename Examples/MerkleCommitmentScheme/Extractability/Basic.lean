@@ -21,6 +21,12 @@ namespace MerkleTree
 
 variable {M S C AUX : Type}
 
+/-- Batch opening returned by an extractability adversary.
+
+It consists of the opened index set `I`, the values claimed at those indices,
+and the corresponding Merkle authentication paths. This is the Merkle analogue
+of a basic commitment opening, lifted from one committed value to a selected
+subvector of leaves. -/
 structure OpeningData (M : Type) (S : Type) (C : Type) (depth : ℕ) where
   I : IndexSet depth
   message : Subvector M I
@@ -370,6 +376,23 @@ notation writes the full tree size as `2L`; here the perfect binary tree has
 def extractabilityCountingTerm (depth t₁ : ℕ) : ℕ :=
   min (2 * t₁ + 1) (2 ^ (depth + 1))
 
+/-- Random-oracle query count for the selected verifier path in the witness
+extractability game.
+
+One selected `checkSingle` uses one leaf query plus `depth` internal-node
+queries, so this is the same `d + 1` path length used throughout the Merkle
+ROM bounds. -/
+def extractabilityVerifierPathQueryCount (depth : ℕ) : ℕ :=
+  depth + 1
+
+/-- Post-commit query count in the selected-witness extractability game.
+
+This combines the adversary open-phase budget `t₂` with one selected verifier
+path. Expanded form:
+`extractabilityPostCommitQueryCount depth t₂ = t₂ + depth + 1`. -/
+def extractabilityPostCommitQueryCount (depth t₂ : ℕ) : ℕ :=
+  t₂ + extractabilityVerifierPathQueryCount depth
+
 /-- Commit-trace birthday summand in the selected-witness Merkle
 extractability bound. -/
 noncomputable def extractabilityBirthdayTerm (C : Type) [Fintype C]
@@ -384,7 +407,8 @@ selected verifier path. The second factor is the number of known labels that a
 fresh query could hit. -/
 noncomputable def extractabilityFreshHitTerm (C : Type) [Fintype C]
     (depth t₁ t₂ : ℕ) : ℝ≥0∞ :=
-  (((t₂ + depth + 1) * extractabilityCountingTerm depth t₁ : ℕ) : ℝ≥0∞) *
+  ((extractabilityPostCommitQueryCount depth t₂ *
+      extractabilityCountingTerm depth t₁ : ℕ) : ℝ≥0∞) *
     (Fintype.card C : ℝ≥0∞)⁻¹
 
 /-- Selected-witness single-commitment extractability error expression.

@@ -12,7 +12,7 @@ import VCVio.OracleComp.ProbComp
 import VCVio.OracleComp.QueryTracking.Structures
 
 /-!
-# Merkle Commitment Scheme — Shared Definitions
+# Merkle Commitment Scheme — Scheme Definition And Algorithms
 
 This file models the textbook Merkle commitment scheme from
 `docs/merklecommitment.tex` in a proof-oriented way.
@@ -32,6 +32,11 @@ right)`. The Merkle proofs therefore reuse the basic commitment scheme's
 generic ROM/cache/logging support for probability bounds, while this file
 defines the independent tree algorithms and extractor state used by those
 proofs.
+
+This is the main API file for the Merkle construction: the public definitions
+`MerkleTree.commitWithSalts`, `MerkleTree.commit`, `MerkleTree.open`,
+`MerkleTree.check`, `MerkleTree.extract`, and the bundled
+`MerkleTree.scheme` are all defined here.
 -/
 
 open OracleComp OracleSpec
@@ -341,6 +346,11 @@ def «open» {depth : ℕ} (trapdoor : Trapdoor S C depth) (I : IndexSet depth) 
     Proof S C I :=
   fun i => openSingle trapdoor i.1
 
+/-- Functional root recomputation from an already-computed leaf label.
+
+The sibling vector is ordered bottom-up. At each step the parity of the current
+index decides whether the current label is the left or right input to
+`nodeHash`, and the recursion moves to the parent index. -/
 def recomputeRootAuxWithHash (nodeHash : C × C → C) :
     {depth : ℕ} → Index depth → C → Vector C depth → C
   | 0, _, current, _ => current
@@ -357,6 +367,11 @@ def recomputeRootSingleWithHash {depth : ℕ} (leafHash : M × S → C) (nodeHas
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth) : C :=
   recomputeRootAuxWithHash nodeHash idx (leafHash (message, authPath.salt)) authPath.siblings
 
+/-- Oracle-based root recomputation from an already-computed leaf label.
+
+This is the verifier-side internal-node computation. Its trace contains
+exactly `depth` internal queries; the leaf query is added by
+`recomputeRootSingle`. -/
 def recomputeRootAux :
     {depth : ℕ} → Index depth → C → Vector C depth → OracleComp (Oracle M S C) C
   | 0, _, current, _ => pure current
@@ -428,12 +443,16 @@ structure TracePartition (M S C : Type) where
   internalQueries : QueryLog (Oracle M S C)
   otherQueries : QueryLog (Oracle M S C)
 
+/-- Empty partial label table before seeding the commitment root. -/
 private def emptyPartialLabels {depth : ℕ} : PartialLabels C depth :=
   fun layer => Vector.ofFn fun _ => none
 
+/-- Empty partial leaf table before processing any leaf-opening queries. -/
 private def emptyPartialLeaves {depth : ℕ} : PartialLeaves M S depth :=
   Vector.ofFn fun _ => none
 
+/-- Initial partial label tree seeded only with the claimed commitment at the
+root. -/
 private def seedRoot {depth : ℕ} (commitment : C) : PartialLabels C depth :=
   fun
     | ⟨0, _⟩ => Vector.ofFn fun _ => some commitment
@@ -450,6 +469,10 @@ def partitionTrace (trace : QueryLog (Oracle M S C)) : TracePartition M S C :=
           { acc with internalQueries := entry :: acc.internalQueries })
     { leafQueries := [], internalQueries := [], otherQueries := [] }
 
+/-- Membership characterization for the leaf-query part of `partitionTrace`.
+
+A trace entry appears in `leafQueries` exactly when it appeared in the original
+trace and its typed Merkle query is `Sum.inl (message, salt)`. -/
 theorem mem_partitionTrace_leafQueries_iff (trace : QueryLog (Oracle M S C))
     (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) :
     entry ∈ (partitionTrace (M := M) (S := S) (C := C) trace).leafQueries ↔
@@ -486,6 +509,10 @@ theorem mem_partitionTrace_leafQueries_iff (trace : QueryLog (Oracle M S C))
                   simp at hdomEq
                 · exact ih.mpr ⟨htl, hdom⟩
 
+/-- Membership characterization for the internal-query part of `partitionTrace`.
+
+A trace entry appears in `internalQueries` exactly when it appeared in the
+original trace and its typed Merkle query is `Sum.inr (left, right)`. -/
 theorem mem_partitionTrace_internalQueries_iff (trace : QueryLog (Oracle M S C))
     (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) :
     entry ∈ (partitionTrace (M := M) (S := S) (C := C) trace).internalQueries ↔
@@ -522,6 +549,24 @@ theorem mem_partitionTrace_internalQueries_iff (trace : QueryLog (Oracle M S C))
                   simpa [partitionTrace]
                 · exact List.mem_cons_of_mem _ (ih.mpr ⟨htl, hdom⟩)
 
+/-
+Partial-tree closure for the extractor.
+
+The extractor starts with only the root commitment known. An internal query
+`H(left, right) = answer` can reveal `left` and `right` at a child layer only
+when the parent slot is already known to be `answer`. One pass can unlock one
+additional layer in the worst case, so `buildPartialTreeFromTrace` below runs
+`depth + 1` passes.
+
+The private lemmas in this block prove three invariants:
+* known labels are monotone across propagation;
+* roots remain seeded by the commitment;
+* when a unique internal query justifies a parent, the corresponding child
+  labels become known.
+-/
+
+/-- Apply one internal query to one child layer, using already-known parent
+labels to reveal missing children. -/
 private def propagateInternalQueryAtLayer {layer : ℕ} [DecidableEq C]
     (left right answer : C) (oldChildren : Vector (Option C) (2 ^ (layer + 1)))
     (parents : Vector (Option C) (2 ^ layer)) :
@@ -537,6 +582,8 @@ private def propagateInternalQueryAtLayer {layer : ℕ} [DecidableEq C]
             else none
         | none => none
 
+/-- Apply one internal query simultaneously to every non-root layer, reading
+parents from the fixed base state and writing children into the current state. -/
 private def propagateInternalQueryUsingBase {depth : ℕ} [DecidableEq C]
     (left right answer : C) (baseLabels currentLabels : PartialLabels C depth) :
     PartialLabels C depth :=
@@ -547,6 +594,7 @@ private def propagateInternalQueryUsingBase {depth : ℕ} [DecidableEq C]
           (currentLabels ⟨Nat.succ layer, hlayer⟩)
           (baseLabels ⟨layer, Nat.lt_of_succ_lt hlayer⟩)
 
+/-- One closure pass over all internal queries in the trace. -/
 private def propagateInternalQueriesOnce {depth : ℕ} [DecidableEq C]
     (trace : QueryLog (Oracle M S C)) (labels : PartialLabels C depth) :
     PartialLabels C depth :=
@@ -710,6 +758,7 @@ private theorem propagateInternalQueriesOnce_get_eq_of_some {depth : ℕ} [Decid
     ((partitionTrace (M := M) (S := S) (C := C) trace).internalQueries)
     labels labels layer idx value hvalue
 
+/-- Iterate internal-query propagation for a fixed number of closure passes. -/
 private def closeInternalQueries {depth : ℕ} [DecidableEq C]
     (trace : QueryLog (Oracle M S C)) :
     ℕ → PartialLabels C depth → PartialLabels C depth
@@ -1376,6 +1425,8 @@ def buildPartialTreeFromTraceAfterPasses {depth : ℕ} [DecidableEq C]
   closeInternalQueries (M := M) (S := S) (C := C) (depth := depth) trace passes
     (seedRoot (depth := depth) commitment)
 
+/-- The closure construction never changes the seeded root label, even after an
+arbitrary number of internal-query propagation passes. -/
 @[simp] theorem buildPartialTreeFromTraceAfterPasses_root {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) (passes : ℕ) :
     (buildPartialTreeFromTraceAfterPasses (M := M) (S := S) (C := C)
@@ -1565,6 +1616,7 @@ theorem buildPartialTreeFromTraceAfterPasses_rightChild_get_of_unique_internal
       have huniq := hunique originLeft value (by simpa [hanswer] using hmemOrigin)
       simpa [buildPartialTreeFromTraceAfterPasses, seed, huniq.2] using hvalue
 
+/-- The final closed partial tree is always rooted at the claimed commitment. -/
 @[simp] theorem buildPartialTreeFromTrace_root {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) :
     (buildPartialTreeFromTrace (M := M) (S := S) (C := C) (depth := depth) commitment trace
@@ -1952,6 +2004,17 @@ def traceEntryAnswer (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Rang
   | ⟨Sum.inl _, answer⟩ => answer
   | ⟨Sum.inr _, answer⟩ => answer
 
+/-
+Known-label accounting.
+
+These lemmas expose the finite target set used by extractability probability
+bounds. A commit trace of length `q` can justify at most `2q + 1` labels
+(`left` and `right` inputs per internal query plus the root), and never more
+than the full perfect-tree size `2^(depth + 1)`.
+-/
+
+/-- Membership in the known-label list at one layer is equivalent to some
+partial-tree slot at that layer containing the value. -/
 theorem mem_knownLabelsAtLayer_iff {depth : ℕ} (labels : PartialLabels C depth)
     (layer : Fin (depth + 1)) (value : C) :
     value ∈ knownLabelsAtLayer labels layer ↔
@@ -1974,6 +2037,8 @@ theorem mem_knownLabelsAtLayer_iff {depth : ℕ} (labels : PartialLabels C depth
     exact List.mem_filterMap.mpr
       ⟨some value, Vector.mem_toList_iff.mpr hvec, rfl⟩
 
+/-- Membership in the full known-label list is equivalent to some slot in some
+layer containing the value. -/
 theorem mem_knownLabelsList_iff {depth : ℕ} (labels : PartialLabels C depth)
     (value : C) :
     value ∈ knownLabelsList labels ↔
@@ -1981,6 +2046,7 @@ theorem mem_knownLabelsList_iff {depth : ℕ} (labels : PartialLabels C depth)
         (labels layer).get pos = some value := by
   simp [knownLabelsList, mem_knownLabelsAtLayer_iff]
 
+/-- Finset version of `mem_knownLabelsList_iff`. -/
 theorem mem_knownLabels_iff {depth : ℕ} [DecidableEq C]
     (labels : PartialLabels C depth) (value : C) :
     value ∈ knownLabels labels ↔
@@ -1988,6 +2054,8 @@ theorem mem_knownLabels_iff {depth : ℕ} [DecidableEq C]
         (labels layer).get pos = some value := by
   simp [knownLabels, mem_knownLabelsList_iff]
 
+/-- Membership in `traceKnownLabels` means the closed partial tree built from
+that trace contains the value at some layer and position. -/
 theorem mem_traceKnownLabels_iff {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) (value : C) :
     value ∈ traceKnownLabels (M := M) (S := S) (C := C)
@@ -1997,6 +2065,7 @@ theorem mem_traceKnownLabels_iff {depth : ℕ} [DecidableEq C]
           (depth := depth) commitment trace layer).get pos = some value := by
   simp [traceKnownLabels, mem_knownLabels_iff]
 
+/-- Convenience introduction rule for `traceKnownLabels`. -/
 theorem mem_traceKnownLabels_of_get_eq_some {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C))
     (layer : Fin (depth + 1)) (pos : Fin (2 ^ layer.1)) (value : C)
@@ -2008,6 +2077,8 @@ theorem mem_traceKnownLabels_of_get_eq_some {depth : ℕ} [DecidableEq C]
   exact (mem_traceKnownLabels_iff (M := M) (S := S) (C := C)
     (depth := depth) commitment trace value).mpr ⟨layer, pos, hget⟩
 
+/-- The left input of an internal trace query appears in
+`internalInputLabels`. -/
 theorem mem_internalInputLabels_left_of_mem {trace : QueryLog (Oracle M S C)}
     {left right answer : C}
     (hmem : ⟨Sum.inr (left, right), answer⟩ ∈ trace) :
@@ -2028,6 +2099,8 @@ theorem mem_internalInputLabels_left_of_mem {trace : QueryLog (Oracle M S C)}
                 rcases pair with ⟨queryLeft, queryRight⟩
                 simpa [internalInputLabels] using (Or.inr (Or.inr (ih htail)))
 
+/-- The right input of an internal trace query appears in
+`internalInputLabels`. -/
 theorem mem_internalInputLabels_right_of_mem {trace : QueryLog (Oracle M S C)}
     {left right answer : C}
     (hmem : ⟨Sum.inr (left, right), answer⟩ ∈ trace) :
@@ -2138,6 +2211,8 @@ theorem mem_traceLabelCandidates_of_get_eq_some {depth : ℕ} [DecidableEq C]
           exact List.mem_cons_of_mem _
             (mem_internalInputLabels_right_of_mem (M := M) (S := S) (C := C) hmem)
 
+/-- Every label reconstructed from a trace is either the root commitment or an
+input to an internal query in the trace. -/
 theorem traceKnownLabels_subset_candidates {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) :
     traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace ⊆
@@ -2150,6 +2225,8 @@ theorem traceKnownLabels_subset_candidates {depth : ℕ} [DecidableEq C]
     (mem_traceLabelCandidates_of_get_eq_some (M := M) (S := S) (C := C)
       (depth := depth) commitment trace layer pos value hget)
 
+/-- Internal-query input labels contribute at most two candidates per trace
+entry. -/
 private theorem internalInputLabels_length_le (trace : QueryLog (Oracle M S C)) :
     (internalInputLabels (M := M) (S := S) (C := C) trace).length ≤ 2 * trace.length := by
   induction trace with
@@ -2167,6 +2244,7 @@ private theorem internalInputLabels_length_le (trace : QueryLog (Oracle M S C)) 
               simp [internalInputLabels]
               omega
 
+/-- Candidate-list length bound: root plus at most two inputs per trace entry. -/
 theorem traceLabelCandidates_length_le (commitment : C)
     (trace : QueryLog (Oracle M S C)) :
     (traceLabelCandidates (M := M) (S := S) (C := C) commitment trace).length ≤
@@ -2174,6 +2252,8 @@ theorem traceLabelCandidates_length_le (commitment : C)
   simp [traceLabelCandidates]
   exact internalInputLabels_length_le (M := M) (S := S) (C := C) trace
 
+/-- Query-count target bound for extractability:
+`|traceKnownLabels| <= 2 * trace.length + 1`. -/
 theorem traceKnownLabels_card_le_trace_length {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) :
     (traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace).card ≤
@@ -2192,6 +2272,7 @@ theorem traceKnownLabels_card_le_trace_length {depth : ℕ} [DecidableEq C]
     _ ≤ 2 * trace.length + 1 :=
           traceLabelCandidates_length_le (M := M) (S := S) (C := C) commitment trace
 
+/-- At one layer, the number of known labels is bounded by the layer width. -/
 private theorem knownLabelsAtLayer_length_le {depth : ℕ} (labels : PartialLabels C depth)
     (layer : Fin (depth + 1)) :
     (knownLabelsAtLayer labels layer).length ≤ 2 ^ layer.1 := by
@@ -2208,6 +2289,7 @@ private theorem knownLabelsAtLayer_length_le {depth : ℕ} (labels : PartialLabe
     _ = 2 ^ layer.1 := by
           simp
 
+/-- Pull a factor of two out of a finite list sum. -/
 private theorem list_sum_map_two_mul (xs : List ℕ) :
     (xs.map fun x => 2 * x).sum = 2 * xs.sum := by
   induction xs with
@@ -2216,6 +2298,8 @@ private theorem list_sum_map_two_mul (xs : List ℕ) :
   | cons x xs ih =>
       simp [ih, Nat.mul_add]
 
+/-- Perfect-binary-tree arithmetic:
+`1 + sum_{i < n} 2^i <= 2^n`. -/
 private theorem finRange_pow_two_sum_add_one_le : ∀ n : ℕ,
     ((List.finRange n).map fun i => 2 ^ i.1).sum + 1 ≤ 2 ^ n
   | 0 => by
@@ -2240,6 +2324,8 @@ private theorem finRange_pow_two_sum_add_one_le : ∀ n : ℕ,
       rw [pow_succ]
       omega
 
+/-- Tree-size target bound: a depth-`d` partial tree has at most
+`2^(d + 1)` known labels. -/
 private theorem knownLabelsList_length_le {depth : ℕ} (labels : PartialLabels C depth) :
     (knownLabelsList labels).length ≤ 2 ^ (depth + 1) := by
   rw [knownLabelsList, List.length_flatMap]
@@ -2254,6 +2340,7 @@ private theorem knownLabelsList_length_le {depth : ℕ} (labels : PartialLabels 
           have h := finRange_pow_two_sum_add_one_le (depth + 1)
           omega
 
+/-- Tree-size cardinality bound for `traceKnownLabels`. -/
 theorem traceKnownLabels_card_le_tree_size {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) :
     (traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace).card ≤
@@ -2269,6 +2356,9 @@ theorem traceKnownLabels_card_le_tree_size {depth : ℕ} [DecidableEq C]
             (buildPartialTreeFromTrace (M := M) (S := S) (C := C)
               (depth := depth) commitment trace)
 
+/-- Final target-count bound used in extractability:
+
+`|traceKnownLabels| <= min (2 * trace.length + 1) (2^(depth + 1))`. -/
 theorem traceKnownLabels_card_le_min {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) :
     (traceKnownLabels (M := M) (S := S) (C := C) (depth := depth) commitment trace).card ≤
@@ -2279,6 +2369,8 @@ theorem traceKnownLabels_card_le_min {depth : ℕ} [DecidableEq C]
     (traceKnownLabels_card_le_tree_size (M := M) (S := S) (C := C)
       (depth := depth) commitment trace)
 
+/-- Labels known after an intermediate closure pass are included in the final
+`traceKnownLabels` target set. -/
 theorem knownLabels_after_passes_subset_traceKnownLabels {depth : ℕ} [DecidableEq C]
     (commitment : C) (trace : QueryLog (Oracle M S C)) (passes : ℕ)
     (hpasses : passes ≤ depth + 1) :
@@ -2660,6 +2752,8 @@ private theorem closeInternalQueries_append_eq_left_of_answers_not_final
       exact hanswers queryLeft queryRight answer hmem (hsubset (by
         simpa [buildPartialTreeFromTraceAfterPasses] using hknown))
 
+/-- Appending internal queries whose answers are not already known cannot
+change the closed partial label tree. -/
 theorem buildPartialTreeFromTrace_append_eq_left_of_answers_not_mem
     {depth : ℕ} [DecidableEq C]
     (commitment : C) (commitTrace openTrace : QueryLog (Oracle M S C))
@@ -2731,6 +2825,16 @@ private theorem buildPartialTreeFromTrace_append_eq_left_of_mem_or_answers_not_m
       (M := M) (S := S) (C := C) (depth := depth)
       commitment commitTrace openTrace hanswers (depth + 1) (by rfl)
 
+/-
+Leaf-population closure.
+
+After internal labels are reconstructed, a leaf query
+`H(message, salt) = answer` can recover a leaf opening only when the leaf label
+slot is already known to be `answer`. These lemmas mirror the internal closure
+lemmas above and are used by the same-tree extractability proof.
+-/
+
+/-- Apply one leaf query to the partial leaf table. -/
 private def populateLeafQuery {depth : ℕ} [DecidableEq C] (message : M) (salt : S) (answer : C)
     (labels : PartialLabels C depth) (leaves : PartialLeaves M S depth) :
     PartialLeaves M S depth :=
@@ -3223,6 +3327,8 @@ private theorem populateLeavesFold_eq_self_of_mem_or_answers_not_known {depth : 
                 (fun message salt answer hmem =>
                   hanswers message salt answer (List.mem_cons_of_mem _ hmem))
 
+/-- Appending leaf queries whose answers are not known labels cannot change the
+populated leaf table. -/
 theorem populateLeavesFromTrace_append_eq_left_of_answers_not_known {depth : ℕ}
     [DecidableEq C] (commitTrace openTrace : QueryLog (Oracle M S C))
     (labels : PartialLabels C depth)
@@ -3293,6 +3399,8 @@ def extractedStateFromTrace {depth : ℕ} [DecidableEq C]
     (depth := depth) trace labels
   ⟨labels, leaves⟩
 
+/-- Appending trace entries whose answers avoid the known-label target set does
+not change the extractor state. -/
 theorem extractedStateFromTrace_append_eq_left_of_answers_not_mem {depth : ℕ}
     [DecidableEq C] (commitment : C)
     (commitTrace openTrace : QueryLog (Oracle M S C))
@@ -3334,6 +3442,12 @@ theorem extractedStateFromTrace_append_eq_left_of_answers_not_mem {depth : ℕ}
           hanswers ⟨Sum.inl (message, salt), answer⟩ hmem)
   simp [extractedStateFromTrace, hlabels, hleaves]
 
+/-- If appending an open trace changes the extractor state, then some appended
+query answer hit a label already known from the commit trace.
+
+This is the deterministic implication behind the extractability fresh-hit bad
+event. The probability layer bounds exactly this kind of hit by
+`query_count * |traceKnownLabels| / |C|`. -/
 theorem exists_open_answer_mem_traceKnownLabels_of_extractedStateFromTrace_append_ne
     {depth : ℕ} [DecidableEq C] (commitment : C)
     (commitTrace openTrace : QueryLog (Oracle M S C))
@@ -3399,6 +3513,12 @@ private theorem extractedStateFromTrace_append_eq_left_of_mem_or_answers_not_mem
           (hanswers ⟨Sum.inl (message, salt), answer⟩ hmem))
   simp [extractedStateFromTrace, hlabels, hleaves]
 
+/-- If an open-phase extension changes the extractor state, then some new
+open-phase query answer hit a label already known from the commit trace.
+
+This stronger form additionally rules out entries already present in the
+commit trace. It is the deterministic origin statement used before the ROM
+fresh-hit probability bound. -/
 theorem
 exists_open_answer_mem_traceKnownLabels_and_not_mem_commitTrace_of_extractedStateFromTrace_append_ne
     {depth : ℕ} [DecidableEq C] (commitment : C)
@@ -3437,6 +3557,8 @@ def fillMissing {depth : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
     Vector.ofFn fun idx => (state.labels layer).get idx |>.getD default
   (messages, ⟨salts, labels⟩)
 
+/-- `fillMissing` preserves any known extracted message/salt pair at the
+message projection. -/
 @[simp] theorem fillMissing_message_get_eq_of_some_leaf {depth : ℕ}
     [Inhabited M] [Inhabited S] [Inhabited C]
     (state : ExtractedState M S C depth) (idx : Index depth) (message : M) (salt : S)
@@ -3444,6 +3566,8 @@ def fillMissing {depth : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
     (fillMissing (M := M) (S := S) (C := C) state).1.get idx = message := by
   simp [fillMissing, hleaf]
 
+/-- `fillMissing` preserves any known extracted message/salt pair at the salt
+projection of the trapdoor. -/
 @[simp] theorem fillMissing_salt_get_eq_of_some_leaf {depth : ℕ}
     [Inhabited M] [Inhabited S] [Inhabited C]
     (state : ExtractedState M S C depth) (idx : Index depth) (message : M) (salt : S)
@@ -3451,6 +3575,8 @@ def fillMissing {depth : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
     (fillMissing (M := M) (S := S) (C := C) state).2.salts.get idx = salt := by
   simp [fillMissing, hleaf]
 
+/-- `fillMissing` preserves every known internal or leaf label in the trapdoor
+label table. -/
 @[simp] theorem fillMissing_label_get_eq_of_some_label {depth : ℕ}
     [Inhabited M] [Inhabited S] [Inhabited C]
     (state : ExtractedState M S C depth) (layer : Fin (depth + 1))
@@ -3458,6 +3584,12 @@ def fillMissing {depth : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
     (hlabel : (state.labels layer).get idx = some label) :
     ((fillMissing (M := M) (S := S) (C := C) state).2.labels layer).get idx = label := by
   simp [fillMissing, hlabel]
+
+/-!
+The public extractor returns a default-filled tree only when the commitment
+never appears as an oracle answer in the commit trace. These private helpers
+connect leaf/internal trace membership to the branch condition.
+-/
 
 private def commitmentAppears [DecidableEq C] (commitment : C)
     (trace : QueryLog (Oracle M S C)) : Bool :=

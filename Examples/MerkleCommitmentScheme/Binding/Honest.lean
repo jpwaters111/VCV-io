@@ -69,6 +69,12 @@ private noncomputable def honestBindingAsBindingRun
       proof₀ := opening.proof
       proof₁ := «open» (S := S) (C := C) trapdoor opening.I }
 
+/-- Query budget for the packaged honest-binding run.
+
+The computation is `choose`, then honest `commitWithSalts`, then adversarial
+`open_`. The numeric budget is
+`tChoose + (2^(depth + 1) - 1) + tOpen`, which is bounded by the packaged total
+budget `t`. -/
 private theorem honestBindingAsBindingRun_totalQueryBound
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     {depth t : ℕ}
@@ -185,6 +191,7 @@ Lean event/game: same conditioned event as
 `honest_binding_bound_conditioned`.
 
 Bound expression: `bindingTextbookErrorTerm C t = t^2 / (2 * |C|)` under
+`bindingTextbookDominanceThreshold depth <= t`, i.e.
 `2 * (depth + 1)^2 <= t`.
 
 Scope note: the budget `t` includes the honest commit cost. This is the compact
@@ -197,13 +204,13 @@ theorem honest_binding_bound_textbook_conditioned {depth t : ℕ}
     [Inhabited M] [Inhabited S] [Inhabited C]
     (A : HonestBindingAdversary M S C AUX depth t)
     (hC : 0 < Fintype.card C)
-    (hlarge : 2 * (depth + 1) ^ 2 ≤ t) :
+    (hbudget : bindingTextbookDominanceThreshold depth ≤ t) :
     Pr[fun z => HonestBindingTextbookWinROM (M := M) (S := S) (C := C) z |
       honestBindingTextbookGame (M := M) (S := S) (C := C) A] ≤
       bindingTextbookErrorTerm C t :=
   le_trans
     (honest_binding_bound_conditioned (M := M) (S := S) (C := C) A hC)
-    (bindingErrorTerm_le_textbook (C := C) (depth := depth) (t := t) hlarge)
+    (bindingErrorTerm_le_textbook (C := C) depth t hbudget)
 
 /-- Public unconditional honest-binding bound for the packaged witness game.
 

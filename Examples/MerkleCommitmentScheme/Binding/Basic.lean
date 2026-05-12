@@ -21,6 +21,13 @@ namespace MerkleTree
 
 variable {M S C AUX : Type}
 
+/-- Output of a binding adversary.
+
+The adversary gives one Merkle root commitment and two batch openings. Binding
+success later asks whether both openings verify and disagree on at least one
+shared leaf value. This is the Merkle analogue of the basic commitment
+"same commitment, two different openings" output, but with batch index sets and
+authentication-path families. -/
 structure BindingOutput (M : Type) (S : Type) (C : Type) (depth : ℕ) where
   commitment : C
   I₀ : IndexSet depth
@@ -338,6 +345,34 @@ noncomputable def bindingTextbookWitnessGame
     (simulateQ cachingOracle
       (bindingTextbookWitnessRest (M := M) (S := S) (C := C) p.2 p.1)).run p.2
 
+/-- Random-oracle query count for one selected Merkle verifier path.
+
+One `checkSingle` execution asks one leaf query and one internal query for each
+tree level, hence `depth + 1` total oracle queries. Naming this count keeps the
+probability statements readable: it is the `d + 1` term in the textbook
+binding proof. -/
+def bindingVerifierPathQueryCount (depth : ℕ) : ℕ :=
+  depth + 1
+
+/-- Random-oracle query count for the two verifier paths in the witness game.
+
+The ordinary binding witness game checks two selected openings at the same
+index, so its verifier-rest phase costs `2 * (depth + 1)` oracle queries. -/
+def bindingWitnessVerifierQueryCount (depth : ℕ) : ℕ :=
+  2 * bindingVerifierPathQueryCount depth
+
+/-- Budget threshold under which the split binding expression is dominated by
+the compact textbook expression.
+
+Expanded form:
+`bindingTextbookDominanceThreshold depth = 2 * (depth + 1)^2`.
+
+This is the hypothesis used to turn
+`t(t - 1)/(2|C|) + (depth + 1)^2/|C|`
+into the textbook-style `t^2/(2|C|)` bound. -/
+def bindingTextbookDominanceThreshold (depth : ℕ) : ℕ :=
+  2 * (bindingVerifierPathQueryCount depth) ^ 2
+
 /-- Conservative whole-cache binding error term for the ordinary witness game.
 
 This is the bound used by the unconditional `binding_bound`: all adversary and
@@ -353,7 +388,7 @@ the origin-aware theorem.
 -/
 noncomputable def bindingWitnessErrorTerm (C : Type) [Fintype C]
     (depth t : ℕ) : ℝ≥0∞ :=
-  ((t + 2 * (depth + 1)) ^ 2 : ℕ) / (2 * Fintype.card C)
+  ((t + bindingWitnessVerifierQueryCount depth) ^ 2 : ℕ) / (2 * Fintype.card C)
 
 /-- Adversary-cache birthday summand in the split Merkle binding bound. -/
 noncomputable def bindingBirthdayTerm (C : Type) [Fintype C]
@@ -366,7 +401,7 @@ bound. For a tree of depth `d`, each selected `checkSingle` trace has
 `(d + 1)^2 / |C|`. -/
 noncomputable def bindingVerifierErrorTerm (C : Type) [Fintype C]
     (depth : ℕ) : ℝ≥0∞ :=
-  (((depth + 1) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C
+  (((bindingVerifierPathQueryCount depth) ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card C
 
 /-- Textbook split binding error term for the origin-aware witness game.
 
@@ -401,26 +436,40 @@ noncomputable def bindingTextbookErrorTerm (C : Type) [Fintype C]
     (t : ℕ) : ℝ≥0∞ :=
   (((t ^ 2 : ℕ) : ℝ≥0∞) / (2 * Fintype.card C))
 
-/-- The exact witness-game binding error term implies the compact textbook
-expression once the adversary query budget dominates the selected verifier
-cross term. In textbook notation this proves the step from
-`t(t - 1)/(2 * |C|) + (d + 1)^2 / |C|` to
-`MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`, assuming
-`2 * (d + 1)^2 <= t`. -/
-theorem bindingErrorTerm_le_textbook {depth t : ℕ} [Fintype C]
-    (hlarge : 2 * (depth + 1) ^ 2 ≤ t) :
+/-- Arithmetic bridge from the split Merkle binding bound to the compact
+textbook expression.
+
+Variables:
+* `depth` is the Merkle tree depth `d`.
+* `t` is the adversary-phase random-oracle query budget in the split witness
+  theorem.
+* `C` is the random-oracle output type, so `|C| = Fintype.card C = 2^λ`.
+
+Quantitative statement:
+`bindingErrorTerm C depth t` is
+`t(t - 1)/(2 * |C|) + (d + 1)^2 / |C|`.
+If `bindingTextbookDominanceThreshold depth <= t`, equivalently
+`2 * (d + 1)^2 <= t`, this is at most
+`bindingTextbookErrorTerm C t = t^2 / (2 * |C|)`, i.e.
+`MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`.
+
+This theorem is purely arithmetic; it does not change which binding game or
+event is being bounded. -/
+theorem bindingErrorTerm_le_textbook (depth t : ℕ) [Fintype C]
+    (hbudget : bindingTextbookDominanceThreshold depth ≤ t) :
     bindingErrorTerm C depth t ≤ bindingTextbookErrorTerm C t := by
   unfold bindingTextbookErrorTerm
   unfold bindingErrorTerm
   unfold bindingBirthdayTerm
   unfold bindingVerifierErrorTerm
-  let d := depth + 1
+  let d := bindingVerifierPathQueryCount depth
   let N := Fintype.card C
   change (((t * (t - 1) : ℕ) : ℝ≥0∞) / (2 * (N : ℝ≥0∞))) +
       (((d ^ 2 : ℕ) : ℝ≥0∞) / (N : ℝ≥0∞)) ≤
       (((t ^ 2 : ℕ) : ℝ≥0∞) / (2 * (N : ℝ≥0∞)))
   have hnum : t * (t - 1) + 2 * d ^ 2 ≤ t ^ 2 := by
-    have hd2 : 2 * d ^ 2 ≤ t := hlarge
+    have hd2 : 2 * d ^ 2 ≤ t := by
+      simpa [bindingTextbookDominanceThreshold, d] using hbudget
     have hsub : t * (t - 1) + t ≤ t ^ 2 := by
       by_cases ht0 : t = 0
       · simp [ht0]

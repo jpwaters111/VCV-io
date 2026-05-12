@@ -8,6 +8,17 @@ import Examples.MerkleCommitmentScheme.Extractability.Basic
 
 /-!
 # Merkle Commitment Scheme — Extractability Reconstruction
+
+Deterministic reconstruction layer for Merkle extractability.
+
+This file proves the "same-tree" part of the textbook argument: if an accepted
+honest verifier trace is contained in the commit trace and the commit trace has
+no random-oracle collision, then the extractor's filled tree agrees with the
+later accepted opening on every opened index.
+
+The proofs here are fixed-oracle/state facts, not probability bounds. The
+probability layer shows that the assumptions fail only with the advertised ROM
+error terms.
 -/
 
 set_option autoImplicit false
@@ -18,6 +29,11 @@ namespace MerkleTree
 
 variable {M S C AUX : Type}
 
+/-- Expand the extractability win predicate into acceptance plus mismatch of
+the extracted batch opening.
+
+This is an `Iff.rfl` theorem so later proofs can rewrite the game event without
+unfolding all surrounding definitions manually. -/
 theorem extractabilityWin_iff [DecidableEq C] {depth : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth) :
     ExtractabilityWin (M := M) (S := S) (C := C) f x ↔
@@ -28,6 +44,8 @@ theorem extractabilityWin_iff [DecidableEq C] {depth : ℕ} [Inhabited M] [Inhab
               (extractedOutputOfTranscript (M := M) (S := S) (C := C) x).2 x.opening.I
             ≠ x.opening.proof) := Iff.rfl
 
+/-- If the honest verifier rejects, the transcript cannot be an extractability
+win. -/
 theorem not_extractabilityWin_of_accepted_false [DecidableEq C] {depth : ℕ}
     [Inhabited M] [Inhabited S] [Inhabited C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
@@ -36,6 +54,8 @@ theorem not_extractabilityWin_of_accepted_false [DecidableEq C] {depth : ℕ}
   rintro ⟨htrue, _⟩
   simp [hacc] at htrue
 
+/-- No honest-trace escape plus acceptance means the honest verifier log is
+contained in the commit trace. -/
 private theorem honestTrace_subset_of_not_escape [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
     (hsubset : ¬ HonestTraceEscapeEvent (M := M) (S := S) (C := C) f x)
@@ -44,6 +64,8 @@ private theorem honestTrace_subset_of_not_escape [DecidableEq C] {depth : ℕ}
   by_contra hnot
   exact hsubset ⟨hacc, hnot⟩
 
+/-- Batch-log containment gives containment of each constituent selected
+`checkSingle` trace. -/
 private theorem honestTrace_contains_single {depth : ℕ} [DecidableEq C]
     (f : OracleFn M S C) (commitment : C) (I : IndexSet depth)
     (message : Subvector M I) (proof : Proof S C I) (commitTrace : QueryLog (Oracle M S C))
@@ -60,6 +82,8 @@ private theorem honestTrace_contains_single {depth : ℕ} [DecidableEq C]
       f commitment I message proof i)
     hsubset
 
+/-- In a collision-free commit trace, two leaf queries with the same answer
+must have the same `(message, salt)` input. -/
 private theorem leaf_query_unique_of_no_commit_collision {depth : ℕ}
     (x : ExtractTranscript M S C AUX depth)
     (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) x)
@@ -96,6 +120,8 @@ private theorem leaf_query_unique_of_no_commit_collision {depth : ℕ}
       rw [hiElem, hjElem]
     exact hcoll ⟨i, j, hij, hdomne, heq⟩
 
+/-- In a collision-free commit trace, two internal-node queries with the same
+answer must have the same `(left, right)` input pair. -/
 private theorem internal_query_unique_of_no_commit_collision {depth : ℕ}
     (x : ExtractTranscript M S C AUX depth)
     (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) x)
@@ -132,6 +158,8 @@ private theorem internal_query_unique_of_no_commit_collision {depth : ℕ}
       rw [hiElem, hjElem]
     exact hcoll ⟨i, j, hij, hdomne, heq⟩
 
+/-- A contained accepted single-check trace contributes its leaf-query entry to
+the commit trace. -/
 private theorem single_trace_leaf_entry_in_commitTrace {depth : ℕ} [DecidableEq C]
     (f : OracleFn M S C) (commitment : C) (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth)
@@ -148,6 +176,8 @@ private theorem single_trace_leaf_entry_in_commitTrace {depth : ℕ} [DecidableE
     (checkLeafQuery_mem_logEval_checkSingle (M := M) (S := S) (C := C)
       f commitment idx message authPath)
 
+/-- A contained accepted single-check trace contributes each internal-query
+entry on the checked path to the commit trace. -/
 private theorem single_trace_internal_entry_in_commitTrace {depth : ℕ} [DecidableEq C]
     (f : OracleFn M S C) (commitment : C) (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth)
@@ -165,6 +195,15 @@ private theorem single_trace_internal_entry_in_commitTrace {depth : ℕ} [Decida
     (checkInternalQuery_mem_logEval_checkSingle (M := M) (S := S) (C := C)
       f commitment idx message authPath layer)
 
+/-
+The following path-position lemmas connect the verifier's top-down path view
+with the extractor's partial tree coordinates. They are arithmetic only: a path
+node at layer `layer + 1` has parent `pathPos idx layer`, and its sibling is
+the corresponding `siblingPos`.
+-/
+
+/-- The parent of the path position at layer `layer + 1` is the path position
+at layer `layer`. -/
 private theorem parentPos_pathPos_succ {depth : ℕ} (idx : Index depth) (layer : Fin depth) :
     parentPos
         (pathPos idx ⟨layer.1 + 1, Nat.succ_lt_succ layer.2⟩) =
@@ -187,6 +226,8 @@ private theorem parentPos_pathPos_succ {depth : ℕ} (idx : Index depth) (layer 
     rw [show depth - layer.1 = depth - (layer.1 + 1) + 1 by omega, pow_succ]
   simpa [Nat.mul_comm] using hpow.symm
 
+/-- If the child path position is even, it is the left child of the parent path
+position. -/
 private theorem leftChildPos_pathPos_of_even {depth : ℕ} (idx : Index depth)
     (layer : Fin depth)
     (hparity :
@@ -198,6 +239,8 @@ private theorem leftChildPos_pathPos_of_even {depth : ℕ} (idx : Index depth)
   exact leftChildPos_parentPos_of_even
     (pathPos idx ⟨layer.1 + 1, Nat.succ_lt_succ layer.2⟩) hparity
 
+/-- If the child path position is even, its sibling is the right child of the
+same parent. -/
 private theorem rightChildPos_pathPos_of_even {depth : ℕ} (idx : Index depth)
     (layer : Fin depth)
     (hparity :
@@ -209,6 +252,8 @@ private theorem rightChildPos_pathPos_of_even {depth : ℕ} (idx : Index depth)
   exact rightChildPos_parentPos_of_even
     (pathPos idx ⟨layer.1 + 1, Nat.succ_lt_succ layer.2⟩) hparity
 
+/-- If the child path position is odd, its sibling is the left child of the
+same parent. -/
 private theorem leftChildPos_pathPos_of_odd {depth : ℕ} (idx : Index depth)
     (layer : Fin depth)
     (hparity :
@@ -220,6 +265,8 @@ private theorem leftChildPos_pathPos_of_odd {depth : ℕ} (idx : Index depth)
   exact leftChildPos_parentPos_of_odd
     (pathPos idx ⟨layer.1 + 1, Nat.succ_lt_succ layer.2⟩) hparity
 
+/-- If the child path position is odd, it is the right child of the parent path
+position. -/
 private theorem rightChildPos_pathPos_of_odd {depth : ℕ} (idx : Index depth)
     (layer : Fin depth)
     (hparity :
@@ -231,6 +278,7 @@ private theorem rightChildPos_pathPos_of_odd {depth : ℕ} (idx : Index depth)
   exact rightChildPos_parentPos_of_odd
     (pathPos idx ⟨layer.1 + 1, Nat.succ_lt_succ layer.2⟩) hparity
 
+/-- Fixed-oracle evaluation of `recomputeRootAux` as pure hashing. -/
 private theorem eval_recomputeRootAux_eq_withHash (f : OracleFn M S C) :
     {depth : ℕ} → (idx : Index depth) → (current : C) → (siblings : Vector C depth) →
       eval f (recomputeRootAux (M := M) (S := S) (C := C) idx current siblings) =
@@ -244,6 +292,8 @@ private theorem eval_recomputeRootAux_eq_withHash (f : OracleFn M S C) :
       · simp [recomputeRootAux, recomputeRootAuxWithHash, eval_bind,
           hparity, eval_recomputeRootAux_eq_withHash]
 
+/-- Fixed-oracle evaluation of `recomputeRootSingle` as pure leaf-plus-path
+hashing. -/
 private theorem eval_recomputeRootSingle_eq_withHash (f : OracleFn M S C) {depth : ℕ}
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
     eval f (recomputeRootSingle (M := M) (S := S) (C := C) idx message authPath) =
@@ -254,11 +304,15 @@ private theorem eval_recomputeRootSingle_eq_withHash (f : OracleFn M S C) {depth
   rw [recomputeRootSingle, eval_bind]
   simp [recomputeRootSingleWithHash, eval_recomputeRootAux_eq_withHash]
 
+/-- At the root layer, the local index is the original leaf index modulo the
+whole tree width, hence exactly `idx`. -/
 private theorem localIndex_root_eq {depth : ℕ} (idx : Index depth) :
     localIndex idx ⟨0, Nat.succ_pos _⟩ = idx := by
   apply Fin.ext
   simp [localIndex, Nat.mod_eq_of_lt idx.2]
 
+/-- If a single check accepts, the verifier's computed root path label equals
+the commitment. -/
 private theorem checkPathLabel_root_eq_of_check [DecidableEq C] {depth : ℕ}
     (f : OracleFn M S C) (commitment : C) (idx : Index depth)
     (message : M) (authPath : AuthPath S C depth)
@@ -282,6 +336,7 @@ private theorem checkPathLabel_root_eq_of_check [DecidableEq C] {depth : ℕ}
   rw [localIndex_root_eq]
   simpa [recomputeRootSingleWithHash] using hroot
 
+/-- Recomputing with an empty sibling vector returns the current label. -/
 private theorem recomputeRootAuxWithHash_eq_current_of_length_zero {n : ℕ}
     (nodeHash : C × C → C) (idx : Fin (2 ^ n)) (current : C)
     (siblings : Vector C n) (hn : n = 0) :
@@ -289,6 +344,7 @@ private theorem recomputeRootAuxWithHash_eq_current_of_length_zero {n : ℕ}
   subst hn
   simp [recomputeRootAuxWithHash]
 
+/-- The verifier's leaf-layer path label is the leaf-query answer. -/
 theorem checkPathLabel_leaf_eq_leafQuery (f : OracleFn M S C) {depth : ℕ}
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth) :
     checkPathLabel f idx message authPath (Fin.last depth) =
@@ -297,6 +353,11 @@ theorem checkPathLabel_leaf_eq_leafQuery (f : OracleFn M S C) {depth : ℕ}
   apply recomputeRootAuxWithHash_eq_current_of_length_zero
   simp
 
+/-- Prefix reconstruction theorem for path labels.
+
+If the commit trace contains all internal verifier queries above a layer, then
+after that many closure passes the partial tree knows the path label at the
+layer. This is the induction engine behind `sameTree_success`. -/
 theorem path_label_known_after_passes_of_internal_prefix {depth : ℕ} [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
@@ -517,6 +578,11 @@ theorem path_label_known_after_passes_of_internal_prefix {depth : ℕ} [Decidabl
         rw [← hpos]
         simpa [childLayer, parentLayer, internalLayer] using hchild
 
+/-- Final path-label reconstruction from a contained single-check trace.
+
+The prefix theorem needs explicit internal-query membership assumptions; this
+wrapper obtains those memberships from log containment of the whole
+`checkSingle` trace. -/
 private theorem path_label_known_after_passes {depth : ℕ} [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
@@ -544,6 +610,10 @@ private theorem path_label_known_after_passes {depth : ℕ} [DecidableEq C]
         (M := M) (S := S) (C := C)
         f x.commitment idx message authPath x.commitTrace internalLayer hcontains)
 
+/-- Final copath-label reconstruction from a contained single-check trace.
+
+For every layer, the extractor's closed partial tree knows the sibling label
+used by the accepted authentication path. -/
 private theorem copath_label_known_final {depth : ℕ} [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
@@ -754,6 +824,13 @@ private theorem copath_label_known_final {depth : ℕ} [DecidableEq C]
     rw [← hpos]
     simpa [childLayer, parentLayer] using hsib
 
+/-
+The next three lemmas reconcile ordering conventions. `AuthPath.siblings` is
+bottom-up, while `copathLabel` addresses layers top-down. Reversing
+`openSiblings` gives the top-down copath order used by the extractor proof.
+-/
+
+/-- Indexing formula for a reversed vector. -/
 private theorem vector_reverse_get {α : Type} {n : ℕ} (v : Vector α n) (i : Fin n) :
     v.reverse.get i = v.get ⟨n - 1 - i.1, by omega⟩ := by
   change v.reverse[i.1] = v[n - 1 - i.1]
@@ -763,6 +840,8 @@ private theorem vector_reverse_get {α : Type} {n : ℕ} (v : Vector α n) (i : 
   rw [Vector.getElem_toArray]
   simp
 
+/-- Top-down view of `openSiblings`: the sibling for layer `layer` is stored at
+bottom-up position `depth - 1 - layer`. -/
 private theorem openSiblings_get_from_top {depth : ℕ} (labels : Labels C depth)
     (idx : Index depth) (layer : Fin depth) :
     (openSiblings labels idx).get ⟨depth - 1 - layer.1, by omega⟩ =
@@ -813,6 +892,7 @@ private theorem openSiblings_get_from_top {depth : ℕ} (labels : Labels C depth
         have hrec := ih upper (parentPos idx) layer'
         simpa [upper, layer', siblingPos, pathPos, hlast] using hrec
 
+/-- Reversing `openSiblings` aligns it exactly with top-down copath labels. -/
 private theorem openSiblings_reverse_get {depth : ℕ} (labels : Labels C depth)
     (idx : Index depth) (layer : Fin depth) :
     (openSiblings labels idx).reverse.get layer =
@@ -820,6 +900,8 @@ private theorem openSiblings_reverse_get {depth : ℕ} (labels : Labels C depth)
   rw [vector_reverse_get]
   exact openSiblings_get_from_top labels idx layer
 
+/-- Reconstruct an `openSingle` authentication path from its salt and all
+top-down copath labels. -/
 private theorem openSingle_eq_of_salt_and_copath {depth : ℕ}
     (trapdoor : Trapdoor S C depth) (idx : Index depth) (authPath : AuthPath S C depth)
     (hsalt : trapdoor.salts.get idx = authPath.salt)
@@ -845,6 +927,11 @@ private theorem openSingle_eq_of_salt_and_copath {depth : ℕ}
       cases hsiblings
       rfl
 
+/-- Final leaf-opening reconstruction.
+
+If a contained accepted single-check trace is collision-free with respect to
+the commit trace, then `populateLeavesFromTrace` records the exact
+`(message, salt)` pair at the checked leaf. -/
 private theorem leaf_opening_known_final {depth : ℕ} [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
     (idx : Index depth) (message : M) (authPath : AuthPath S C depth)
@@ -915,6 +1002,11 @@ private theorem leaf_opening_known_final {depth : ℕ} [DecidableEq C]
     (f (checkLeafQuery (M := M) (S := S) (C := C) message authPath))
     hleafLabel hleafMem hunique
 
+/-- A contained accepted single-check trace forces `extract` to take the real
+`fillMissing` branch rather than the default fallback branch.
+
+For depth `0`, the contained leaf query supplies the commitment answer. For
+positive depth, the top internal query supplies the commitment answer. -/
 private theorem extract_eq_fillMissing_of_contained_singleTrace {depth : ℕ}
     [DecidableEq C] [Inhabited M] [Inhabited S] [Inhabited C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
@@ -1005,6 +1097,13 @@ private theorem extract_eq_fillMissing_of_contained_singleTrace {depth : ℕ}
         (M := M) (S := S) (C := C) (depth := d + 1)
         x.commitment x.commitTrace left right hmemCommit
 
+/-- Pointwise extraction correctness for one contained accepted single-check
+trace.
+
+The extracted message at `idx` equals the adversary's opened message, and
+opening the extracted trapdoor at `idx` reproduces the adversary's auth path.
+This is the local statement used twice by `sameTree_success`, once for messages
+and once for proofs. -/
 private theorem extract_entry_eq_of_contained_singleTrace {depth : ℕ}
     [DecidableEq C] [Inhabited M] [Inhabited S] [Inhabited C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
@@ -1086,7 +1185,18 @@ private theorem extract_entry_eq_of_contained_singleTrace {depth : ℕ}
   exact ⟨hmsg, hopen⟩
 
 /-- Deterministic same-tree claim corresponding to the last case in the
-textbook extractability proof. -/
+textbook extractability proof.
+
+Assumptions:
+* no commit-trace collision;
+* no extractor-state change;
+* no honest-trace escape;
+* the honest verifier accepted.
+
+Conclusion: the extractor's restricted message vector and reopened proof family
+match the accepted adversary opening. The proof is pointwise: each opened index
+has a contained accepted `checkSingle` trace, so `extract_entry_eq_of_contained_singleTrace`
+reconstructs that one leaf and auth path. -/
 theorem sameTree_success {depth : ℕ} [DecidableEq C] [Inhabited M] [Inhabited S] [Inhabited C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
     (hcoll : ¬ CommitCollisionEvent (M := M) (S := S) (C := C) x)
