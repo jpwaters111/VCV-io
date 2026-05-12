@@ -12,6 +12,13 @@ import Examples.MerkleCommitmentScheme.Extractability.Probability
 Public aggregator for the Merkle extractability definitions, deterministic
 reconstruction lemmas, query bounds, and ROM probability theorems.
 
+Relation to basic commitment support: the extractor and partial-tree
+reconstruction are Merkle-specific, but the ROM proof uses the same generic
+cache/logging machinery as the basic commitment scheme. Leaf commitments are
+represented by `Sum.inl (message, salt)` oracle queries, while internal Merkle
+labels use `Sum.inr (left, right)`; generic fresh-hit and birthday bounds are
+then specialized to the Merkle answer space `C`.
+
 ## Textbook Correspondence
 
 Textbook statement: single-commitment Merkle extractability in the random-oracle

@@ -59,6 +59,11 @@ def BindingCollisionEvent [DecidableEq C] {depth : ℕ}
       (check (M := M) (S := S) (C := C)
         out.commitment out.I₁ out.message₁ out.proof₁)).2
 
+/-- The Merkle `CrossLogCollision` predicate is definitionally the generic
+`OracleComp.LogCrossCollision` predicate from basic commitment support.
+
+This keeps deterministic Merkle collision theorems readable while allowing ROM
+probability proofs to use the generic log-collision lemmas. -/
 theorem crossLogCollision_iff_oracleComp_logCrossCollision
     {log₀ log₁ : QueryLog (Oracle M S C)} :
     CrossLogCollision log₀ log₁ ↔ OracleComp.LogCrossCollision log₀ log₁ := by
@@ -141,6 +146,12 @@ def BindingWitnessBadEventROM {depth : ℕ}
     (z : BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)) : Prop :=
   CacheHasCollision z.2
 
+/-- Rest-phase cross-log event for the ordinary witness game.
+
+It records that the two selected `checkSingle` logs collide after the adversary
+has selected a mismatching shared index. Probability files either charge this
+to the conservative whole-cache birthday term or strengthen it to an
+origin-aware rest-created event. -/
 def BindingWitnessRestLogCrossEvent {depth : ℕ}
     (z : BindingWitnessTranscript M S C depth × QueryCache (Oracle M S C)) : Prop :=
   ∃ (single₀ single₁ : Bool × QueryLog (Oracle M S C)),
@@ -208,6 +219,12 @@ def BindingTextbookWitnessTranscript.toWitnessTranscript {depth : ℕ}
   single₀? := z.single₀?
   single₁? := z.single₁?
 
+/-- Side condition for the conditioned textbook binding game: the first
+selected verifier path did not collide with itself.
+
+Together with `¬ FreshHitInitialCache`, this ensures any remaining selected
+cross-log collision is charged to the two-verifier product term rather than to
+an earlier adversary/cache collision. -/
 private def BindingTextbookNoFirstLogCollision {depth : ℕ}
     (z : BindingTextbookWitnessTranscript M S C depth × QueryCache (Oracle M S C)) :
     Prop :=
@@ -251,11 +268,20 @@ def BindingTextbookRestCreatedEvent {depth : ℕ}
     ¬ OracleComp.LogHasCollision single₀.2 ∧
     ¬ OracleComp.FreshHitInitialCache z.1.commitCache z.2
 
+/-- Commit phase of the witness binding game: just the adversary output.
+
+The probability proof runs this under `cachingOracle`; its query budget `t`
+produces the birthday summand `t * (t - 1) / (2 * |C|)` in the split bound. -/
 noncomputable def bindingWitnessCommitPart {depth t : ℕ}
     (A : BindingAdversary M S C depth t) :
     OracleComp (Oracle M S C) (BindingOutput M S C depth) :=
   A.run
 
+/-- Rest phase of the witness binding game after the adversary output is fixed.
+
+If a mismatch witness exists, it logs exactly two `checkSingle` computations.
+Each selected path has query bound `depth + 1`, giving the verifier product
+term `(depth + 1)^2 / |C|` in the origin-aware bound. -/
 noncomputable def bindingWitnessRest [DecidableEq C] {depth : ℕ}
     (out : BindingOutput M S C depth) :
     OracleComp (Oracle M S C) (BindingWitnessTranscript M S C depth) := by

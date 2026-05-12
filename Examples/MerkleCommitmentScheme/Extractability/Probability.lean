@@ -11,6 +11,21 @@ import Examples.CommitmentScheme.Support.Probability
 
 /-!
 # Merkle Commitment Scheme — Extractability Probability Bounds
+
+This file proves the selected-witness ROM extractability bound by reusing the
+generic basic commitment support for cache/log collisions and fresh-cache-hit
+probabilities. The Merkle layer supplies only the tree-specific target set and
+query counts.
+
+Quantitative map:
+* commit trace collision: `A.t₁^2 / (2 * |C|)`;
+* rest-phase fresh hit into an extractor-known tree label:
+  `(A.t₂ + depth + 1) *
+    min (2 * A.t₁ + 1, 2^(depth + 1)) / |C|`.
+
+Here `|C|` is `Fintype.card C`, corresponding to `2^λ` in the textbook. The
+selected witness accounts for one verifier path, so its verifier cost is
+`depth + 1`; full-batch bounds are handled by separate conditional combiners.
 -/
 
 set_option autoImplicit false
@@ -21,6 +36,11 @@ namespace MerkleTree
 
 variable {M S C AUX : Type}
 
+/-- A collision visible in the commit-phase log is already present in the
+post-commit cache.
+
+This is the bridge from `CommitCollisionEvent` to the generic birthday bound,
+which contributes the `A.t₁^2 / (2 * |C|)` summand. -/
 private theorem commitLogCollision_implies_cacheCollision {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -45,6 +65,13 @@ private theorem commitLogCollision_implies_cacheCollision {depth t : ℕ}
     hdomain, hcache z.1.2[i] hiMem,
     hcache z.1.2[j] hjMem, hanswer⟩
 
+/-- A rest-phase computation creates a fresh cache entry whose random-oracle
+answer is one of the labels already known from the commit trace.
+
+This is the single target event used for both extractor-state changes and
+selected-check trace escapes. If the rest phase has query bound `q` and the
+known-label set has size `N`, the generic fresh-hit estimate charges it by
+`q * N / |C|`. -/
 private def FreshTraceKnownLabelHit {depth : ℕ} [DecidableEq C]
     (commitment : C) (commitTrace : QueryLog (Oracle M S C))
     (cache₁ : QueryCache (Oracle M S C))
@@ -54,6 +81,9 @@ private def FreshTraceKnownLabelHit {depth : ℕ} [DecidableEq C]
     ∃ t₀ : (Oracle M S C).Domain, ∃ v : (Oracle M S C).Range t₀,
       z.2 t₀ = some v ∧ cache₁ t₀ = none ∧ HEq v target
 
+/-- Definitional bridge between the extractor-state notation used by this file
+and the state construction exported from the deterministic reconstruction
+layer. -/
 private theorem extractedStateOfTrace_eq_extractedStateFromTrace {depth : ℕ}
     [DecidableEq C] (commitment : C) (trace : QueryLog (Oracle M S C)) :
     extractedStateOfTrace (M := M) (S := S) (C := C)
@@ -61,6 +91,10 @@ private theorem extractedStateOfTrace_eq_extractedStateFromTrace {depth : ℕ}
       extractedStateFromTrace (M := M) (S := S) (C := C)
         (depth := depth) commitment trace := rfl
 
+/-- Equality for dependent query-log entries from equal domains and HEq answers.
+
+This is used when a cache entry is traced back to a commit-log entry: once the
+domain and random-oracle answer match, the dependent sigma entries are equal. -/
 private theorem queryLogEntry_eq_of_fst_eq_heq
     {entry₀ entry₁ :
       (t : (Oracle M S C).Domain) × (Oracle M S C).Range t}
@@ -76,6 +110,11 @@ private theorem queryLogEntry_eq_of_fst_eq_heq
           subst hanswer
           rfl
 
+/-- If a final cache entry has a known-label answer but is not in the commit
+trace, then it is a fresh hit relative to the post-commit cache.
+
+The lemma rules out the alternative that the entry was already created during
+commit by using the cached-log origin theorem from generic support. -/
 private theorem freshTraceKnownLabelHit_of_final_cache_entry_not_mem {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -132,6 +171,11 @@ private theorem freshTraceKnownLabelHit_of_final_cache_entry_not_mem {depth t : 
       entry.1, entry.2, hfinal, hcache₁_none,
       traceEntryAnswer_heq_of_entry (M := M) (S := S) (C := C) entry⟩
 
+/-- Entries logged by the adversary open phase are present in the final rest
+cache.
+
+This is a pure replay/cache-monotonicity fact: it has no probability content,
+but it lets extractor-state changes be charged to actual fresh cache entries. -/
 private theorem openTrace_entry_in_final_cache_of_rest_support {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C]
@@ -183,6 +227,12 @@ private theorem openTrace_entry_in_final_cache_of_rest_support {depth t : ℕ}
           cache₂ (single, cache₃) hsingle
       exact hmono (hopenCache entry hmem)
 
+/-- If adding the open trace changes the extracted partial tree, then the rest
+phase produced a fresh answer equal to a label already known from the commit
+trace.
+
+This is the extractor-state-change contribution to the fresh-hit summand
+`(A.t₂ + depth + 1) * knownLabels / |C|`. -/
 private theorem extractorStateChangedEvent_implies_freshTraceKnownLabelHit_of_rest_support
     {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -264,6 +314,12 @@ private theorem extractorStateChangedEvent_implies_freshTraceKnownLabelHit_of_re
       (M := M) (S := S) (C := C)
       A hx hmono entry hfinal hnotCommit htarget
 
+/-- Entries in the selected `checkSingle` log are present in the final rest
+cache.
+
+The selected witness branch logs exactly one verifier path, so this helper
+connects trace escape to a concrete cache entry created or replayed during the
+rest phase. -/
 private theorem singleTrace_entry_in_final_cache_of_rest_support {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C]
@@ -336,6 +392,11 @@ private theorem singleTrace_entry_in_final_cache_of_rest_support {depth t : ℕ}
             commitment j.1 (opening.message j) (opening.proof j))
           cache₂ (single, cache₃) hsingle).1 entry hmemSingle
 
+/-- If the leaf query and every internal path query of a selected
+`checkSingle` run are already in the commit trace, then the whole selected
+verifier log is contained in that commit trace.
+
+This is a fixed-oracle trace-shape helper; it carries no probability term. -/
 private theorem logContains_checkSingle_of_leaf_and_internal_mem {depth : ℕ}
     [DecidableEq C]
     (f : OracleFn M S C) (commitment : C) (idx : Index depth)
@@ -365,6 +426,13 @@ private theorem logContains_checkSingle_of_leaf_and_internal_mem {depth : ℕ}
   · rcases hinternalEntry with ⟨layer, hentryEq⟩
     simpa [hentryEq] using hinternal layer
 
+/-- If a selected verifier path is missing an internal query from the commit
+trace, then the missing query's answer is already an extractor-known label.
+
+The proof uses the deterministic reconstruction layer: all earlier internal
+queries on the path are present, so closure of the partial tree knows the
+parent label. This converts a trace escape into the same fresh-hit target set
+used in the probability bound. -/
 private theorem exists_known_answer_not_mem_commitTrace_of_missing_internal
     {depth : ℕ} [DecidableEq M] [DecidableEq S] [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
@@ -465,6 +533,12 @@ private theorem exists_known_answer_not_mem_commitTrace_of_missing_internal
     rw [htraceAnswer]
     exact htarget
 
+/-- If all selected internal queries are present but the selected verifier log
+still escapes the commit trace, then the missing entry is the leaf query and
+its answer is the known leaf label.
+
+This is the leaf analogue of the missing-internal helper and handles the
+`depth = 0` case directly. -/
 private theorem exists_known_answer_not_mem_commitTrace_of_missing_leaf
     {depth : ℕ} [DecidableEq M] [DecidableEq S] [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
@@ -563,6 +637,12 @@ private theorem exists_known_answer_not_mem_commitTrace_of_missing_leaf
       f x.commitment idx message authPath
   · simpa [leafEntry, traceEntryAnswer] using htarget
 
+/-- Any selected-check trace escape exposes a missing entry whose answer is in
+the extractor-known label set.
+
+The proof splits on whether the first missing entry is an internal query or the
+leaf query. This is the deterministic core behind the witness-trace-escape
+fresh-hit bound. -/
 private theorem exists_known_answer_not_mem_commitTrace_of_checkSingle_escape
     {depth : ℕ} [DecidableEq M] [DecidableEq S] [DecidableEq C]
     (f : OracleFn M S C) (x : ExtractTranscript M S C AUX depth)
@@ -720,6 +800,11 @@ private theorem witnessTraceEscapeEvent_implies_freshTraceKnownLabelHit_of_rest_
       (M := M) (S := S) (C := C)
       A hx hmono entry hfinal hnotCommit htarget
 
+/-- Once the post-commit cache is collision-free, every selected-witness bad
+event is a fresh hit into the known-label target set.
+
+The commit-collision branch is impossible under `hno`; the remaining branches
+are extractor-state change and selected verifier trace escape. -/
 private theorem witnessBadEventROM_implies_freshTraceKnownLabelHit_of_rest_support
     {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -769,6 +854,13 @@ private theorem witnessBadEventROM_implies_freshTraceKnownLabelHit_of_rest_suppo
         (M := M) (S := S) (C := C)
         A hx hz hnotCollBase hescape
 
+/-- Bound the number of extractor-known labels after an `A.t₁`-bounded commit
+phase by `extractabilityCountingTerm depth A.t₁`.
+
+Quantitatively this is
+`min (2 * A.t₁ + 1, 2^(depth + 1))`: each internal query can justify at most two
+new children plus the root, and the full perfect tree has `2^(depth + 1)` label
+slots. -/
 private theorem traceKnownLabels_card_le_extractabilityCountingTerm_of_commit_support
     {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -798,6 +890,12 @@ private theorem traceKnownLabels_card_le_extractabilityCountingTerm_of_commit_su
       · omega
       · rfl)
 
+/-- Bound all rest-phase witness bad events after a fixed collision-free commit
+support point.
+
+The rest phase consists of the adversary open phase plus at most one selected
+`checkSingle` path, so its query bound is `A.t₂ + depth + 1`. Multiplying by the
+known-label target count gives `extractabilityFreshHitTerm`. -/
 private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -874,11 +972,19 @@ private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
         unfold extractabilityFreshHitTerm
         gcongr
 
+/-- Commit-phase component of the selected-witness bad-event game.
+
+This abbreviation lets the final probability proof read as a standard
+commit/rest bind split. -/
 private noncomputable def witnessBadEventCommitPart {depth t : ℕ}
     (A : ExtractAdversary M S C AUX depth t) :
     OracleComp (Oracle M S C) ((C × AUX) × QueryLog (Oracle M S C)) :=
   extractabilityWitnessCommitPart (M := M) (S := S) (C := C) A
 
+/-- Rest-phase component after a concrete commit output and post-commit cache.
+
+It runs the open phase and, if a mismatch witness is selected, one logged
+`checkSingle` verifier path. -/
 private noncomputable def witnessBadEventRestPart
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -891,6 +997,11 @@ private noncomputable def witnessBadEventRestPart
     (extractabilityWitnessRest (M := M) (S := S) (C := C)
       A x.1.1.1 x.1.1.2 x.1.2)).run x.2
 
+/-- Birthday bound for commit-phase cache collisions:
+`A.t₁^2 / (2 * |C|)`.
+
+This is the generic cache-collision bound specialized to the Merkle oracle
+range, whose answer cardinality is `|C|`. -/
 private theorem witnessCommitCollision_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -920,6 +1031,12 @@ private theorem witnessCommitCollision_bound {depth t : ℕ}
     merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
     not_not] using hbirthday
 
+/-- Conditional rest-phase bound after a fixed collision-free commit support
+point.
+
+This packages `witnessBadEventROM_rest_bound` into the shape required by
+`probEvent_bind_le_add`, with the predicate written as the negation form used
+by that generic lemma. -/
 private theorem witnessRestBadEvent_bound_of_commit_support {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]

@@ -12,6 +12,13 @@ import Examples.MerkleCommitmentScheme.Binding.Honest
 Public aggregator for the Merkle binding definitions, query bounds, ROM
 probability bounds, and honest-binding reductions.
 
+Relation to basic commitment support: the deterministic binding theorem is
+Merkle-specific, but the probability proof reuses the basic commitment support
+for `CacheHasCollision`, `LogHasCollision`, birthday estimates, and fresh-hit
+estimates. The Merkle layer specializes those generic lemmas to leaf queries
+`Sum.inl (message, salt)`, internal queries `Sum.inr (left, right)`, and the
+selected verifier path length `depth + 1`.
+
 ## Textbook Correspondence
 
 Textbook statement: Merkle binding reduces to a collision between the two

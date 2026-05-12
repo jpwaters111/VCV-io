@@ -10,6 +10,20 @@ import Examples.CommitmentScheme.Support.Probability
 
 /-!
 # Merkle Commitment Scheme — Multi-Extractability Probability Bounds
+
+This file proves the simple stateful selected-witness multi-extractability
+bound by reducing each selected family coordinate to the single-commitment
+`extractability_bound`.
+
+Quantitative map:
+* per selected coordinate: `extractabilityErrorTerm C depth A.t₁ A.t₂`;
+* family union bound over `Fin n`: `n * extractabilityErrorTerm C depth A.t₁ A.t₂`.
+
+The proof introduces no new ROM arithmetic. All cache/collision/fresh-hit
+probability work is inherited from the single extractability theorem, which in
+turn reuses the generic basic commitment support. This theorem intentionally
+does not include the tighter textbook equal-commitment/different-extracted-tree
+branch.
 -/
 
 set_option autoImplicit false
@@ -20,6 +34,11 @@ namespace MerkleTree
 
 variable {M S C AUX : Type}
 
+/-- A witness transcript with no selected mismatch cannot be a selected-witness
+extractability win.
+
+This removes the empty-witness branch before comparing stateful family games to
+single-commitment projections. -/
 private theorem witnessExtractabilityWinROM_none_false
     [DecidableEq S] [DecidableEq C]
     {depth : ℕ} [Inhabited M] [Inhabited S] [Inhabited C]
@@ -31,6 +50,11 @@ private theorem witnessExtractabilityWinROM_none_false
   rintro ⟨i, hsome, _⟩
   cases hsome
 
+/-- `selectWitness?` depends only on the commitment, commit trace, and opening;
+auxiliary payloads and the recorded open trace do not affect witness selection.
+
+This permits the stateful multi game and the projected single game to use
+different auxiliary types while selecting the same mismatch index. -/
 private theorem selectWitness?_congr_aux_openTrace
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -52,6 +76,12 @@ private theorem selectWitness?_congr_aux_openTrace
          openTrace := openTrace₂ } : ExtractTranscript M S C AUX₂ depth) := by
   simp [selectWitness?, extractedOutputOfTranscript]
 
+/-- The selected-witness win predicate is insensitive to irrelevant auxiliary
+payloads, open traces, and the particular stored single-check log payload once
+the same witness option is used.
+
+This is the predicate-level bridge between the stateful family transcript and
+the projected single-commitment transcript. -/
 private theorem witnessWinROM_congr_aux_openTrace_singleCheck
     [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -190,11 +220,22 @@ private theorem statefulSelectedBranch_some_congr
     (M := M) (S := S) (C := C) (AUX := AUX)
     k commitments aux commitTrace openTrace opening i z.1 z.2
 
+/-- Logged commit phase of the stateful multi game.
+
+It records one shared commit trace for all `n` commitments. The final public
+bound charges this shared commit phase through each projected single game and
+then unions over `Fin n`. -/
 private noncomputable def multiExtractabilityWitnessCommitPart {depth n t : ℕ}
     (A : MultiExtractAdversary M S C AUX depth n t) :
     OracleComp (Oracle M S C) (((Fin n → C) × AUX) × QueryLog (Oracle M S C)) :=
   (simulateQ loggingOracle A.commit).run
 
+/-- Rest phase of the stateful multi witness game.
+
+It runs the adversary open phase once, selects one mismatching opened index in
+the chosen commitment coordinate, and logs only that selected `checkSingle`
+path. The verifier contribution is therefore the single-path `depth + 1` cost
+already present in `extractabilityErrorTerm`. -/
 private noncomputable def multiExtractabilityStatefulWitnessRest
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -236,6 +277,13 @@ private noncomputable def multiExtractabilityStatefulWitnessRest
           witness? := some i
           singleCheck? := some single }
 
+/-- Rest phase of the projected single-commitment witness game for coordinate
+`k`.
+
+If the shared open phase selected a different coordinate, the projected opening
+is empty; otherwise it is the actual opening for `k`. This definition is the
+mechanical bridge used to compare the stateful selected branch with the
+ordinary `extractabilityWitnessGame`. -/
 private noncomputable def projectedWitnessRest
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -267,6 +315,10 @@ private noncomputable def projectedWitnessRest
             (out.1 k) i.1 (openingForK.message i) (openingForK.proof i))).run
       pure { base := base, witness? := some i, singleCheck? := some single }
 
+/-- Normal form for the stateful multi witness game as a logged commit phase
+followed by the stateful rest phase.
+
+This isolates operational unfolding from the final union-bound theorem. -/
 private theorem multiExtractabilityStatefulWitnessInner_eq_bind {depth n t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -277,6 +329,12 @@ private theorem multiExtractabilityStatefulWitnessInner_eq_bind {depth n t : ℕ
           A x.1 x.2 := by
   rfl
 
+/-- Normal form for the projected single witness game using the same shared
+commit phase as the stateful multi game.
+
+This is the query-bound/projection bridge: after this rewrite, the only
+difference between the games is how the selected coordinate is represented in
+the rest phase. -/
 private theorem projectedWitnessInner_eq_bind {depth n t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -653,6 +711,12 @@ theorem multi_extractability_win_le_selected_sum {depth t n : ℕ}
           multiExtractabilityStatefulWitnessGame (M := M) (S := S) (C := C) A] := by
             rfl
 
+/-- Private final union-bound calculation for the stateful selected-witness
+multi game.
+
+Quantitatively, each branch is bounded by
+`extractabilityErrorTerm C depth A.t₁ A.t₂`; summing over `Fin n` gives
+`n * extractabilityErrorTerm C depth A.t₁ A.t₂`. -/
 private theorem multi_extractability_bound_stateful {depth t n : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]

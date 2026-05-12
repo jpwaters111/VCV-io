@@ -31,6 +31,11 @@ theorem merkleOracleRange_card_eq [Fintype C]
     Fintype.card ((Oracle M S C).Range q) = Fintype.card C := by
   cases q <;> rfl
 
+/-- Uniform lower bound on all Merkle oracle answer-space cardinalities.
+
+Generic ROM probability lemmas are stated relative to `spec.Range default`;
+this theorem specializes that side condition to the Merkle oracle, where every
+query returns an element of `C`. -/
 theorem merkleOracleRange_card_le [Fintype C] [Inhabited M] [Inhabited S] [Inhabited C]
     (q : (Oracle M S C).Domain) :
     Fintype.card ((Oracle M S C).Range default) ≤
@@ -38,6 +43,12 @@ theorem merkleOracleRange_card_le [Fintype C] [Inhabited M] [Inhabited S] [Inhab
   rw [merkleOracleRange_card_eq (M := M) (S := S) (C := C) default,
     merkleOracleRange_card_eq (M := M) (S := S) (C := C) q]
 
+/-- The dependent answer stored in a Merkle query-log entry is propositionally
+the same value as the uniform `C`-valued projection `traceEntryAnswer`.
+
+This HEq bridge is needed because generic cache/log events store answers in the
+dependent range `(Oracle M S C).Range t`, while Merkle target sets are ordinary
+finite sets of `C` labels. -/
 theorem traceEntryAnswer_heq_of_entry
     (entry : (t : (Oracle M S C).Domain) × (Oracle M S C).Range t) :
     HEq entry.2 (traceEntryAnswer (M := M) (S := S) (C := C) entry) := by
@@ -54,6 +65,12 @@ noncomputable def merkleLogAnswerTargets [DecidableEq C] [Inhabited M] [Inhabite
     (log : QueryLog (Oracle M S C)) : Finset C :=
   (log.map (traceEntryAnswer (M := M) (S := S) (C := C))).toFinset
 
+/-- The finite answer target set extracted from a log has size at most the log
+length.
+
+Quantitatively, a selected Merkle verifier path has at most `depth + 1` logged
+queries, so its target set contributes at most `depth + 1` answers to a
+fresh-hit bound. -/
 theorem merkleLogAnswerTargets_card_le [DecidableEq C] [Inhabited M] [Inhabited S]
     [Inhabited C]
     (log : QueryLog (Oracle M S C)) :
@@ -66,6 +83,11 @@ theorem merkleLogAnswerTargets_card_le [DecidableEq C] [Inhabited M] [Inhabited 
           List.toFinset_card_le _
     _ = log.length := by simp
 
+/-- Every log entry contributes its projected answer to
+`merkleLogAnswerTargets`.
+
+This is the membership direction used when turning a cross-log collision into a
+fresh-hit event against the first log's answer set. -/
 theorem traceEntryAnswer_mem_merkleLogAnswerTargets [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
     {log : QueryLog (Oracle M S C)}

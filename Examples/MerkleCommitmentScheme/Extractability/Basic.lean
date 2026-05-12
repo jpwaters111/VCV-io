@@ -76,10 +76,16 @@ def extractedOutputOfTranscript {depth : ℕ} [DecidableEq C]
   extractedOutputOfTrace (M := M) (S := S) (C := C) (depth := depth)
     x.commitment x.commitTrace
 
+/-- Pointwise mismatch between two single-leaf authentication paths.
+
+This avoids relying on function extensionality inside the witness selector: a
+proof mismatch is either a salt mismatch or a sibling-label mismatch at some
+layer. -/
 def authPathMismatch [DecidableEq S] [DecidableEq C] {depth : ℕ}
     (p q : AuthPath S C depth) : Prop :=
   p.salt ≠ q.salt ∨ ∃ layer : Fin depth, p.siblings.get layer ≠ q.siblings.get layer
 
+/-- Equal authentication paths do not produce a witness mismatch. -/
 theorem not_authPathMismatch_of_eq [DecidableEq S] [DecidableEq C] {depth : ℕ}
     {p q : AuthPath S C depth} (h : p = q) :
     ¬ authPathMismatch (S := S) (C := C) p q := by
@@ -120,6 +126,10 @@ noncomputable def selectWitness? [DecidableEq M] [DecidableEq S] [DecidableEq C]
       else
         false
 
+/-- Soundness of the deterministic witness selector.
+
+If `selectWitness?` returns an opened index, that index is a real mismatch
+between the extracted output and the adversary opening. -/
 theorem selectWitness?_some {depth : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -401,12 +411,19 @@ noncomputable def extractabilityErrorTerm (C : Type) [Fintype C]
     (depth t₁ t₂ : ℕ) : ℝ≥0∞ :=
   extractabilityBirthdayTerm C t₁ + extractabilityFreshHitTerm C depth t₁ t₂
 
+/-- Definitional normalization for the full-batch cached extractability game.
+
+This helper keeps probability proofs aligned with the basic commitment style,
+where games are rewritten to a `simulateQ cachingOracle ...` normal form before
+applying bind and support lemmas. -/
 @[simp] theorem extractabilityGame_eq {depth t : ℕ} [DecidableEq C] [DecidableEq M] [DecidableEq S]
     [Inhabited M] [Inhabited S] [Inhabited C]
     (A : ExtractAdversary M S C AUX depth t) :
     extractabilityGame (M := M) (S := S) (C := C) A =
       (simulateQ cachingOracle (extractabilityInner (M := M) (S := S) (C := C) A)).run ∅ := rfl
 
+/-- Definitional normalization for the selected-witness cached
+extractability game. -/
 @[simp] theorem extractabilityWitnessGame_eq {depth t : ℕ}
     [DecidableEq C] [DecidableEq M] [DecidableEq S]
     [Inhabited M] [Inhabited S] [Inhabited C]

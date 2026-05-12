@@ -12,6 +12,12 @@ import Examples.MerkleCommitmentScheme.MultiExtractability.Probability
 Public aggregator for the Merkle multi-extractability game definitions and
 probability theorems.
 
+Relation to basic commitment support: the stateful multi game is Merkle
+specific, but its probability bound is a union of single-commitment witness
+extractability bounds. Those single bounds already reduce to the generic basic
+commitment support for cache collisions, log collisions, and fresh random-oracle
+hits.
+
 ## Textbook Correspondence
 
 Textbook statement: multi-extractability asks that extraction succeed for every

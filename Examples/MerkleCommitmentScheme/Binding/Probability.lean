@@ -10,6 +10,24 @@ import Examples.CommitmentScheme.Support.Probability
 
 /-!
 # Merkle Commitment Scheme — Binding Probability Bounds
+
+This file connects the deterministic Merkle collision theorem to reusable ROM
+probability support from `Examples.CommitmentScheme.Support`. The generic
+support supplies cache/log collision events, cache monotonicity, birthday
+bounds, fresh-hit bounds, and probability bind/union lemmas. The Merkle-specific
+inputs are the selected `checkSingle` computations and their query bound
+`depth + 1`.
+
+Quantitative map:
+* ordinary witness fallback:
+  `(t + 2 * (depth + 1))^2 / (2 * |C|)`;
+* origin-aware conditioned split:
+  `t * (t - 1) / (2 * |C|) + (depth + 1)^2 / |C|`.
+
+The helper theorems below identify which generic event a Merkle binding failure
+creates. They are intentionally explicit about cache origins because the
+`(depth + 1)^2 / |C|` verifier term only applies after excluding fresh hits
+into the adversary's commit cache.
 -/
 
 set_option autoImplicit false
@@ -20,6 +38,12 @@ namespace MerkleTree
 
 variable {M S C AUX : Type}
 
+/-- A second selected verifier path creates a fresh cache entry whose answer is
+one of the first selected verifier path's logged answers.
+
+This is the concrete Merkle event charged to the verifier term
+`(depth + 1)^2 / |C|`: the second path has at most `depth + 1` queries and the
+first path contributes at most `depth + 1` target answers. -/
 private def SecondVerifierFreshHit [DecidableEq C]
     (targets : Finset C)
     (cache₁ : QueryCache (Oracle M S C))
@@ -29,6 +53,11 @@ private def SecondVerifierFreshHit [DecidableEq C]
     ∃ v : (Oracle M S C).Range t₀,
       z.2 t₀ = some v ∧ cache₁ t₀ = none ∧ HEq v target
 
+/-- Monotonicity for the excluded fresh-hit side condition: if a later cache
+extends an intermediate cache, a hit into the initial cache remains visible.
+
+This lets rest-phase proofs reason with the final cache produced by both
+selected verifier paths while applying local no-fresh-hit hypotheses. -/
 private theorem freshHitInitialCache_mono_final
     {cache₀ cache₁ cache₂ : QueryCache (Oracle M S C)}
     (hle : cache₁ ≤ cache₂) :
@@ -37,6 +66,12 @@ private theorem freshHitInitialCache_mono_final
   rintro ⟨tNew, tOld, uNew, uOld, hnone, hnew, hold, hne, heq⟩
   exact ⟨tNew, tOld, uNew, uOld, hnone, hle hnew, hold, hne, heq⟩
 
+/-- Convert two concrete colliding log entries into the generic
+`OracleComp.LogHasCollision` event.
+
+The theorem has no probability content; it is the structural bridge used when a
+cache collision is traced back to two entries in the same selected verifier
+log. -/
 private theorem logHasCollision_of_mem
     {log : QueryLog (Oracle M S C)}
     {entry₀ entry₁ :
@@ -53,6 +88,13 @@ private theorem logHasCollision_of_mem
     exact hne rfl
   · exact hne
 
+/-- If a cached/logged computation starts from a collision-free cache, produces
+no local log collision, and does not create a fresh value hitting the initial
+cache, then the resulting cache is still collision-free.
+
+This is the cache-origin invariant behind the conditioned textbook binding
+split: adversary collisions are paid by the birthday term, while rest-created
+collisions are charged only to selected verifier queries. -/
 private theorem cacheNoCollision_after_cached_logging_of_no_initial_collision
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -158,6 +200,12 @@ private theorem cacheNoCollision_after_cached_logging_of_no_initial_collision
           hentry₀ hentry₁ hentry_ne
           (hentry₀_answer.trans (heq.trans hentry₁_answer.symm)))
 
+/-- A rest-created cross-log collision between the two selected verifier logs
+forces the second verifier run to sample a fresh answer that hits the first
+verifier log's answer set.
+
+The no-first-log-collision hypothesis rules out the case where the second log
+only reuses a value already created twice by the first verifier path. -/
 private theorem restCreatedLogCrossCollision_implies_secondVerifierFreshHit
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -220,6 +268,11 @@ private theorem restCreatedLogCrossCollision_implies_secondVerifierFreshHit
     entry₁.1, entry₁.2, hentry₁_cache₂, hentry₁_cache₁_none, ?_⟩
   exact heq.symm.trans (traceEntryAnswer_heq_of_entry (M := M) (S := S) (C := C) entry₀)
 
+/-- Bound the second-verifier fresh-hit event by the selected-path verifier
+term `bindingVerifierErrorTerm C depth = (depth + 1)^2 / |C|`.
+
+The proof is a direct application of the generic fresh-cache-hit bound to the
+target finset formed from the first selected verifier log. -/
 private theorem secondVerifierFreshHit_bound_of_first_log
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -275,6 +328,13 @@ private theorem secondVerifierFreshHit_bound_of_first_log
           simp [bindingVerifierErrorTerm, Nat.pow_two, ENNReal.div_eq_inv_mul,
             mul_comm]
 
+/-- Conditional bound for the second selected verifier path after the first
+path has been logged.
+
+If the intermediate cache is collision-free, the event is bounded as a fresh
+hit into the first log's at-most-`depth + 1` answers. If it is not collision-free,
+the local no-collision/no-fresh-hit hypotheses in `BindingTextbookRestCreatedEvent`
+make the event impossible. -/
 private theorem bindingTextbookRestCreatedEvent_second_bound
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -388,6 +448,13 @@ private theorem bindingTextbookRestCreatedEvent_second_bound
     rw [hzero]
     exact zero_le _
 
+/-- Bound the entire selected-verifier rest phase of the conditioned textbook
+binding game by `(depth + 1)^2 / |C|`.
+
+The no-witness branch has probability zero. In the selected branch, both
+`checkSingle` computations have query bound `depth + 1`, and the previous
+lemma charges all rest-created cross-log collisions to the second verifier
+fresh-hit event. -/
 private theorem bindingTextbookWitnessRest_restCreatedEvent_bound
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -496,6 +563,12 @@ private theorem bindingTextbookWitnessRest_restCreatedEvent_bound
           (M := M) (S := S) (C := C)
           out commitCache w check₀ check₁ hz hbound₀ hbound₁ hnoCommit
 
+/-- A successful selected binding rest phase gives a generic cross-log
+collision between the two stored selected `checkSingle` logs.
+
+This is the deterministic-to-ROM bridge for the conservative fallback bound:
+the Merkle theorem `checkSingle_crossLogCollision` supplies the collision, and
+generic cache-collision support supplies the probability estimate. -/
 private theorem bindingWitnessRest_win_implies_logCrossEvent_of_support
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited C]
@@ -589,6 +662,12 @@ private theorem bindingWitnessRest_win_implies_logCrossEvent_of_support
             (by simpa [hlog₀, hlog₁] using hcollision)
       exact ⟨single₀, single₁, rfl, rfl, hcollisionStored⟩
 
+/-- Lift a bound on selected-rest cross-log collisions to a bound on selected
+binding wins.
+
+There is no new arithmetic here: the theorem only packages the deterministic
+implication from accepted conflicting paths to `BindingWitnessRestLogCrossEvent`
+so the probability proof can reuse any supplied `ε`. -/
 private theorem bindingWitnessRest_win_bound_of_logCrossEvent_bound
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited C]
@@ -609,6 +688,13 @@ private theorem bindingWitnessRest_win_bound_of_logCrossEvent_bound
         (M := M) (S := S) (C := C) out hz hwin)
     hlog
 
+/-- Convert a generic selected-rest cross-log collision into an origin-aware
+`RestCreatedLogCrossCollision` when the starting cache is collision-free and no
+fresh rest query hits an initial-cache value.
+
+This is the event-strengthening step needed for the conditioned textbook split:
+only collisions whose two answers are created during the selected verifier rest
+phase can be charged to the `(depth + 1)^2 / |C|` term. -/
 private theorem bindingWitnessRest_logCrossEvent_implies_restCreatedEvent_of_support
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited C]
@@ -689,6 +775,11 @@ private theorem bindingWitnessRest_logCrossEvent_implies_restCreatedEvent_of_sup
           hnoCollision hnoFreshHit hcross
       exact ⟨single₀, single₁, rfl, rfl, hrest⟩
 
+/-- A conditioned selected binding win implies the precise rest-created event
+bounded by the verifier term.
+
+The theorem combines the deterministic Merkle collision theorem with the
+origin-aware no-fresh-hit side conditions stored in `BindingTextbookWinROM`. -/
 private theorem bindingTextbookWitnessRest_win_implies_restCreatedEvent_of_support
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited C]
@@ -722,6 +813,12 @@ private theorem bindingTextbookWitnessRest_win_implies_restCreatedEvent_of_suppo
   exact ⟨single₀, single₁, by simpa using hsingle₀, by simpa using hsingle₁,
     hrest, hnoFirstCollision single₀ (by simpa using hsingle₀), hnoFreshHit⟩
 
+/-- A ROM witness binding win implies a whole-cache collision in the final
+cache.
+
+This is the conservative fallback path: it does not classify origins, so the
+probability bound charges the adversary and the two selected verifier paths to
+one birthday term `(t + 2 * (depth + 1))^2 / (2 * |C|)`. -/
 private theorem bindingWitnessWinROM_implies_badEventROM_of_support
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited C]
@@ -893,6 +990,12 @@ theorem binding_bound_wholeCache {depth t : ℕ}
           simpa [bindingWitnessGame, BindingWitnessBadEventROM, bindingWitnessErrorTerm,
             merkleOracleRange_card_eq (M := M) (S := S) (C := C) default] using hbirthday
 
+/-- Generic two-phase combiner for the ordinary witness game.
+
+The commit phase contributes the adversary birthday term
+`t * (t - 1) / (2 * |C|)`. The hypothesis supplies the rest-phase verifier
+term, usually `(depth + 1)^2 / |C|`, after conditioning on a collision-free
+post-commit cache. -/
 private theorem bindingWitnessGame_bound_of_rest_logCrossEvent_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]

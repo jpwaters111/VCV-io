@@ -10,7 +10,12 @@ import Examples.CommitmentScheme.Support.QueryBound
 /-!
 # Merkle Commitment Scheme — Query-Bound Support
 
-Total-query-bound lemmas for Merkle opening verification.
+Total-query-bound lemmas for Merkle construction and verification.
+
+These lemmas supply the numerical costs used by the ROM security proofs:
+building a perfect tree costs one random-oracle query per node
+`2^(depth + 1) - 1`, while a selected single-leaf verifier path costs
+`depth + 1` queries: one leaf query plus `depth` internal-node queries.
 -/
 
 open OracleSpec OracleComp
@@ -19,6 +24,10 @@ namespace MerkleTree
 
 variable {M S C : Type}
 
+/-- One raw oracle query has total query bound `1`.
+
+All Merkle query-bound proofs reduce leaf and internal hashes to this generic
+one-query fact. -/
 private theorem isTotalQueryBound_liftQuery_one {ι : Type} {spec : OracleSpec ι}
     {t : spec.Domain} :
     IsTotalQueryBound (liftM (query (spec := spec) t) : OracleComp spec (spec.Range t)) 1 := by
@@ -27,6 +36,11 @@ private theorem isTotalQueryBound_liftQuery_one {ι : Type} {spec : OracleSpec �
   rw [OracleComp.isTotalQueryBound_query_bind_iff]
   exact ⟨Nat.succ_pos _, fun _ => trivial⟩
 
+/-- Mapping an `n`-element finite vector with `k`-query computations costs
+`n * k` queries.
+
+This is the proof-oriented counterpart of vectorized Merkle layers: leaf
+layers and internal layers instantiate it with `k = 1`. -/
 private theorem mapFinM_totalQueryBound {ι : Type} {spec : OracleSpec ι} {α : Type}
     {n k : ℕ} (f : Fin n → OracleComp spec α)
     (hf : ∀ i, IsTotalQueryBound (f i) k) :
@@ -193,7 +207,11 @@ theorem commitWithSalts_totalQueryBound {depth : ℕ}
     (buildTree_totalQueryBound (M := M) (S := S) (C := C) messages salts)
     fun _ => trivial
 
-/-- Recomputing a single Merkle root makes exactly `depth + 1` oracle queries. -/
+/-- Recomputing the internal part of a single Merkle path makes `depth` oracle
+queries.
+
+`recomputeRootSingle_totalQueryBound` adds the initial leaf query, giving the
+selected verifier path cost `depth + 1` used in binding and extractability. -/
 theorem recomputeRootAux_totalQueryBound {depth : ℕ} (idx : Index depth)
     (current : C) (siblings : Vector C depth) :
     IsTotalQueryBound

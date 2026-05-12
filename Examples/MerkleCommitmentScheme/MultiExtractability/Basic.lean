@@ -18,6 +18,11 @@ namespace MerkleTree
 
 variable {M S C AUX : Type}
 
+/-- Local normalization helper for projected witness transcripts.
+
+Projected single-commitment games sometimes append an empty open trace to match
+the stateful transcript shape; this keeps those projections definitionally easy
+to simplify. -/
 private theorem queryLog_append_nil (log : QueryLog (Oracle M S C)) :
     log ++ ([] : QueryLog (Oracle M S C)) = log := by
   exact List.append_nil log
@@ -56,12 +61,20 @@ noncomputable def multiExtractabilityErrorTerm (C : Type) [Fintype C]
 selected opening phase. -/
 structure MultiExtractAdversary (M : Type) (S : Type) (C : Type) (AUX : Type)
     (depth n t : ℕ) where
+  /-- Shared commit phase: outputs all `n` commitments and auxiliary state. -/
   commit : OracleComp (Oracle M S C) ((Fin n → C) × AUX)
+  /-- Open phase: selects one commitment coordinate and an opening for it. -/
   open_ : AUX → OracleComp (Oracle M S C) (Σ _ : Fin n, OpeningData M S C depth)
+  /-- Commit-phase query budget. -/
   t₁ : ℕ
+  /-- Open-phase query budget. The selected verifier path is charged
+  separately through the single-commitment extractability theorem. -/
   t₂ : ℕ
+  /-- Total adversarial budget, excluding the selected verifier path. -/
   totalBound : t₁ + t₂ ≤ t
+  /-- Query-bound certificate for `commit`. -/
   commitBound : IsTotalQueryBound commit t₁
+  /-- Query-bound certificate for each `open_ aux`. -/
   openBound : ∀ aux, IsTotalQueryBound (open_ aux) t₂
 
 /-- Transcript for the stateful multi-commitment witness game. It stores the

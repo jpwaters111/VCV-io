@@ -24,6 +24,14 @@ salts. Single-leaf opening and checking are the primitive algorithms; the
 textbook batch-opening interface is then indexed by a fixed finite set of leaf
 positions. The same layer/index view is also used by the partial-tree extractor
 state built from query traces.
+
+Relation to the basic commitment scheme: Merkle leaf labels use the same random
+oracle shape as the basic fixed-salt commitment, namely `Sum.inl (message,
+salt)`. Internal Merkle nodes add the tree-specific query form `Sum.inr (left,
+right)`. The Merkle proofs therefore reuse the basic commitment scheme's
+generic ROM/cache/logging support for probability bounds, while this file
+defines the independent tree algorithms and extractor state used by those
+proofs.
 -/
 
 open OracleComp OracleSpec
