@@ -16,18 +16,20 @@ probability support from `Examples.CommitmentScheme.Support`. The generic
 support supplies cache/log collision events, cache monotonicity, birthday
 bounds, fresh-hit bounds, and probability bind/union lemmas. The Merkle-specific
 inputs are the selected `checkSingle` computations and their query bound
-`depth + 1`.
+`bindingVerifierPathQueryCount depth`, expanded as `depth + 1`.
 
 Quantitative map:
 * ordinary witness fallback:
-  `(t + 2 * (depth + 1))^2 / (2 * |C|)`;
+  `bindingWitnessErrorTerm C depth t`, expanded as
+  `(t + bindingWitnessVerifierQueryCount depth)^2 / (2 * |C|)`;
 * origin-aware conditioned split:
-  `t * (t - 1) / (2 * |C|) + (depth + 1)^2 / |C|`.
+  `bindingErrorTerm C depth t`, expanded as
+  `t * (t - 1) / (2 * |C|) + bindingVerifierErrorTerm C depth`.
 
 The helper theorems below identify which generic event a Merkle binding failure
 creates. They are intentionally explicit about cache origins because the
-`(depth + 1)^2 / |C|` verifier term only applies after excluding fresh hits
-into the adversary's commit cache.
+`bindingVerifierErrorTerm C depth = (depth + 1)^2 / |C|` verifier term only
+applies after excluding fresh hits into the adversary's commit cache.
 -/
 
 set_option autoImplicit false
@@ -818,7 +820,8 @@ cache.
 
 This is the conservative fallback path: it does not classify origins, so the
 probability bound charges the adversary and the two selected verifier paths to
-one birthday term `(t + 2 * (depth + 1))^2 / (2 * |C|)`. -/
+one birthday term `bindingWitnessErrorTerm C depth t`, expanded as
+`(t + bindingWitnessVerifierQueryCount depth)^2 / (2 * |C|)`. -/
 private theorem bindingWitnessWinROM_implies_badEventROM_of_support
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype C] [Inhabited C]
@@ -1282,8 +1285,8 @@ cross term.
 Lean event/game: same conditioned event as `binding_bound_conditioned`.
 
 Bound expression: `bindingTextbookErrorTerm C t = t^2 / (2 * |C|)` under
-`bindingTextbookDominanceThreshold depth <= t`, i.e.
-`2 * (depth + 1)^2 <= t`. In textbook notation this is
+`bindingTextbookDominanceThreshold depth ≤ t`, i.e.
+`2 * (depth + 1)^2 ≤ t`. In textbook notation this is
 `MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`. -/
 theorem binding_bound_textbook_conditioned {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -1306,7 +1309,8 @@ Textbook statement: selected-index Merkle binding in the ROM.
 Lean event/game: `BindingWitnessWinROM` in `bindingWitnessGame`.
 
 Bound expression: the conservative whole-cache birthday term
-`(t + 2 * (depth + 1))^2 / (2 * |C|)`.
+`bindingWitnessErrorTerm C depth t`, expanded as
+`(t + bindingWitnessVerifierQueryCount depth)^2 / (2 * |C|)`.
 
 Scope note: this theorem is unconditional for the ordinary witness game. Its
 term is intentionally looser than the origin-aware split theorem

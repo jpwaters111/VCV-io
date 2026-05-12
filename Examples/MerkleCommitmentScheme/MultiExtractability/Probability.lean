@@ -392,10 +392,16 @@ private theorem stateful_win_implies_exists_selected {depth n : ℕ}
   intro hwin
   exact ⟨z.1.opening.1, rfl, hwin⟩
 
-/-- Core branch comparison after expanding the stateful and projected witness
-games. The public local helper below keeps later probability proofs from
-depending on this operational normalization script directly. -/
-private theorem stateful_selected_branch_le_projected_witnessGame_core {depth n t : ℕ}
+/-- Expanded operational comparison between one selected branch of the stateful
+multi game and the corresponding projected single-commitment witness game.
+
+This theorem is intentionally private. It performs the low-level case split on
+whether the multi open phase selected coordinate `k`, then checks that the same
+selected `checkSingle` computation is logged on the projected side. Downstream
+probability proofs should use
+`stateful_selected_branch_le_projected_witnessGame`, which hides this
+normalization and reads as the textbook projection step. -/
+private theorem stateful_selected_branch_le_projected_witnessGame_after_unfolding {depth n t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
     [Inhabited M] [Inhabited S] [Inhabited C]
@@ -521,10 +527,10 @@ private theorem stateful_selected_branch_le_projected_witnessGame_core {depth n 
 single-commitment witness game for the projected adversary.
 
 The operational normalization is isolated in
-`stateful_selected_branch_le_projected_witnessGame_core`; keeping this wrapper
-small makes the final union-bound proof read as the textbook reduction:
-select a coordinate, project to the single-commitment witness game, then apply
-the single extractability bound. -/
+`stateful_selected_branch_le_projected_witnessGame_after_unfolding`; keeping
+this wrapper small makes the final union-bound proof read as the textbook
+reduction: select a coordinate, project to the single-commitment witness game,
+then apply the single extractability bound. -/
 private theorem stateful_selected_branch_le_projected_witnessGame {depth n t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]
@@ -536,7 +542,7 @@ private theorem stateful_selected_branch_le_projected_witnessGame {depth n t : �
     Pr[fun z => WitnessExtractabilityWinROM (M := M) (S := S) (C := C) z |
       extractabilityWitnessGame (M := M) (S := S) (C := C)
         (projectMultiExtractAdversary (M := M) (S := S) (C := C) A k)] :=
-  stateful_selected_branch_le_projected_witnessGame_core
+  stateful_selected_branch_le_projected_witnessGame_after_unfolding
     (M := M) (S := S) (C := C) (AUX := AUX) A k
 
 /-- Each selected branch of the stateful game is bounded by the corresponding

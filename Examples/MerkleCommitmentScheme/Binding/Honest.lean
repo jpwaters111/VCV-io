@@ -191,8 +191,8 @@ Lean event/game: same conditioned event as
 `honest_binding_bound_conditioned`.
 
 Bound expression: `bindingTextbookErrorTerm C t = t^2 / (2 * |C|)` under
-`bindingTextbookDominanceThreshold depth <= t`, i.e.
-`2 * (depth + 1)^2 <= t`.
+`bindingTextbookDominanceThreshold depth ≤ t`, i.e.
+`2 * (depth + 1)^2 ≤ t`.
 
 Scope note: the budget `t` includes the honest commit cost. This is the compact
 `MTBindingExpression`-style corollary for the packaged total budget, not the
@@ -221,7 +221,7 @@ Lean event/game: `HonestBindingWinROM` in `honestBindingGame`.
 
 Bound expression: `bindingWitnessErrorTerm C depth t`, the conservative
 whole-cache term from `binding_bound`:
-`(t + 2 * (depth + 1))^2 / (2 * |C|)`.
+`(t + bindingWitnessVerifierQueryCount depth)^2 / (2 * |C|)`.
 
 Scope note: `t` already includes the honest `commitWithSalts` cost via
 `HonestBindingAdversary.totalBound`. The textbook honest-binding macro instead

@@ -20,12 +20,13 @@ query counts.
 Quantitative map:
 * commit trace collision: `A.t₁^2 / (2 * |C|)`;
 * rest-phase fresh hit into an extractor-known tree label:
-  `(A.t₂ + depth + 1) *
+  `extractabilityPostCommitQueryCount depth A.t₂ *
     min (2 * A.t₁ + 1, 2^(depth + 1)) / |C|`.
 
 Here `|C|` is `Fintype.card C`, corresponding to `2^λ` in the textbook. The
 selected witness accounts for one verifier path, so its verifier cost is
-`depth + 1`; full-batch bounds are handled by separate conditional combiners.
+`extractabilityVerifierPathQueryCount depth = depth + 1`; full-batch bounds are
+handled by separate conditional combiners.
 -/
 
 set_option autoImplicit false
@@ -232,7 +233,7 @@ phase produced a fresh answer equal to a label already known from the commit
 trace.
 
 This is the extractor-state-change contribution to the fresh-hit summand
-`(A.t₂ + depth + 1) * knownLabels / |C|`. -/
+`extractabilityPostCommitQueryCount depth A.t₂ * knownLabels / |C|`. -/
 private theorem extractorStateChangedEvent_implies_freshTraceKnownLabelHit_of_rest_support
     {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
@@ -894,8 +895,10 @@ private theorem traceKnownLabels_card_le_extractabilityCountingTerm_of_commit_su
 support point.
 
 The rest phase consists of the adversary open phase plus at most one selected
-`checkSingle` path, so its query bound is `A.t₂ + depth + 1`. Multiplying by the
-known-label target count gives `extractabilityFreshHitTerm`. -/
+`checkSingle` path, so its query bound is
+`extractabilityPostCommitQueryCount depth A.t₂` (expanded as
+`A.t₂ + depth + 1`). Multiplying by the known-label target count gives
+`extractabilityFreshHitTerm`. -/
 private theorem witnessBadEventROM_rest_bound {depth t : ℕ}
     [DecidableEq M] [DecidableEq S] [DecidableEq C]
     [Fintype M] [Fintype S] [Fintype C]

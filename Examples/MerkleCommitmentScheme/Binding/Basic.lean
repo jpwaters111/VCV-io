@@ -448,8 +448,8 @@ Variables:
 Quantitative statement:
 `bindingErrorTerm C depth t` is
 `t(t - 1)/(2 * |C|) + (d + 1)^2 / |C|`.
-If `bindingTextbookDominanceThreshold depth <= t`, equivalently
-`2 * (d + 1)^2 <= t`, this is at most
+If `bindingTextbookDominanceThreshold depth ≤ t`, equivalently
+`2 * (d + 1)^2 ≤ t`, this is at most
 `bindingTextbookErrorTerm C t = t^2 / (2 * |C|)`, i.e.
 `MTBindingExpression(λ, t) = 1/2 * t^2 / 2^λ`.
 

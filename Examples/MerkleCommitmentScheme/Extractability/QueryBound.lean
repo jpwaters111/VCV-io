@@ -16,11 +16,14 @@ Quantitative map:
 * the commit phase is logged and costs `A.t₁`;
 * the rest phase logs the adversary open phase and, if a mismatch witness is
   selected, one `checkSingle` verifier path;
-* one selected verifier path costs `depth + 1`, so the rest budget is
-  `A.t₂ + (depth + 1)`.
+* one selected verifier path costs
+  `extractabilityVerifierPathQueryCount depth`, expanded as `depth + 1`;
+* the rest budget is `extractabilityPostCommitQueryCount depth A.t₂`,
+  expanded as `A.t₂ + depth + 1`.
 
 The probability file uses these budgets to derive
-`A.t₁^2 / (2 * |C|) + (A.t₂ + depth + 1) * targets / |C|`.
+`A.t₁^2 / (2 * |C|) +
+ extractabilityPostCommitQueryCount depth A.t₂ * targets / |C|`.
 -/
 
 set_option autoImplicit false
